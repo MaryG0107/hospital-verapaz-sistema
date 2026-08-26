@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Printer } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
@@ -6,30 +6,30 @@ import { Table } from "../components/Table";
 import { Button } from "../components/Button";
 import { Banner } from "../components/Banner";
 import { Modal } from "../components/Modal";
-import { DocumentoImprimible } from "../components/DocumentoImprimible";
+import { RecetaImprimible } from "../components/RecetaImprimible";
 import { FormField, TextInput, Select, TextArea } from "../components/FormField";
+import { PacienteBuscador } from "../components/PacienteBuscador";
 import { useFetch } from "../hooks/useFetch";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
-import { ROLES } from "../utils/roles";
+import { ROLES, tieneRol } from "../utils/roles";
 
 export function TratamientoPage({ pacienteIdInicial }) {
   const { usuario } = useAuth();
-  const puedeRegistrar = [ROLES.ENFERMERIA, ROLES.CONSULTA, ROLES.ADMIN].includes(usuario.rol);
-  const puedeRecetar = [ROLES.CONSULTA, ROLES.ADMIN].includes(usuario.rol);
+  const puedeRegistrar = tieneRol(usuario, ROLES.ENFERMERIA, ROLES.CONSULTA, ROLES.ADMIN);
+  const puedeRecetar = tieneRol(usuario, ROLES.CONSULTA, ROLES.ADMIN);
 
-  const { data: pacientes } = useFetch("/pacientes");
   const [pacienteId, setPacienteId] = useState(pacienteIdInicial || null);
-
-  useEffect(() => {
-    if (!pacienteId && pacientes?.length) setPacienteId(pacientes[0].id);
-  }, [pacientes, pacienteId]);
+  // Un solo paciente por id (no una lista completa): con volumen alto de
+  // pacientes, cargar todos de una vez para un <select> deja de ser viable.
+  const { data: patient } = useFetch(pacienteId ? `/pacientes/${pacienteId}` : null, { enabled: !!pacienteId });
 
   const { data: items, loading, error, reload } = useFetch(pacienteId ? `/tratamientos?pacienteId=${pacienteId}` : null, { enabled: !!pacienteId });
   const { data: recetas, loading: cargandoRecetas, reload: reloadRecetas } = useFetch(pacienteId ? `/recetas?pacienteId=${pacienteId}` : null, { enabled: !!pacienteId });
 
-  const [form, setForm] = useState({ descripcion: "", dosis: "", costo: "", origen: "intrahospitalario" });
+  const [form, setForm] = useState({ descripcion: "", dosis: "", costo: "", origen: "intrahospitalario", cirujano: "", ayudante: "", instrumentista: "", anestesiologo: "" });
+  const [esQuirurgico, setEsQuirurgico] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
@@ -45,7 +45,8 @@ export function TratamientoPage({ pacienteIdInicial }) {
     try {
       await api.post("/tratamientos", { ...form, pacienteId, costo: Number(form.costo) });
       setMensaje({ tone: "success", texto: "Registrado correctamente." });
-      setForm({ descripcion: "", dosis: "", costo: "", origen: "intrahospitalario" });
+      setForm({ descripcion: "", dosis: "", costo: "", origen: "intrahospitalario", cirujano: "", ayudante: "", instrumentista: "", anestesiologo: "" });
+      setEsQuirurgico(false);
       reload();
     } catch (err) {
       setMensaje({ tone: "error", texto: err.message });
@@ -70,27 +71,34 @@ export function TratamientoPage({ pacienteIdInicial }) {
     }
   }
 
-  const patient = pacientes?.find((p) => p.id === pacienteId);
-
   return (
     <div>
       <PageHeader title="Tratamiento y Medicamentos Intrahospitalarios" subtitle={patient ? `Paciente: ${patient.nombreCompleto} · ${patient.historiaClinica}` : undefined} />
       <div className="mb-4">
-        <Select value={pacienteId || ""} onChange={(e) => setPacienteId(Number(e.target.value))} style={{ maxWidth: 360 }}>
-          {(pacientes || []).map((p) => (
-            <option key={p.id} value={p.id}>{p.nombreCompleto} — {p.historiaClinica}</option>
-          ))}
-        </Select>
+        <PacienteBuscador pacienteSeleccionado={patient} onSelect={(p) => setPacienteId(p?.id || null)} mostrarListado />
       </div>
 
       {error && <Banner tone="error">{error}</Banner>}
+      {pacienteId && (
       <Table
         headers={["Medicamento / Procedimiento", "Dosis", "Fecha", "Costo", "Origen"]}
         rows={loading ? [] : items || []}
         emptyMessage={loading ? "Cargando…" : "Sin registros para este paciente."}
         renderRow={(r) => (
           <>
-            <td className="px-4 py-3">{r.descripcion}</td>
+            <td className="px-4 py-3">
+              {r.descripcion}
+              {(r.cirujano || r.ayudante || r.instrumentista || r.anestesiologo) && (
+                <div className="text-xs mt-0.5" style={{ color: "#999" }}>
+                  {[
+                    r.cirujano && `Cirujano: ${r.cirujano}`,
+                    r.ayudante && `Ayudante: ${r.ayudante}`,
+                    r.instrumentista && `Instrumentista: ${r.instrumentista}`,
+                    r.anestesiologo && `Anestesiólogo: ${r.anestesiologo}`,
+                  ].filter(Boolean).join(" · ")}
+                </div>
+              )}
+            </td>
             <td className="px-4 py-3">{r.dosis || "—"}</td>
             <td className="px-4 py-3">{new Date(r.fecha).toLocaleString()}</td>
             <td className="px-4 py-3">Q{Number(r.costo).toFixed(2)}</td>
@@ -100,8 +108,9 @@ export function TratamientoPage({ pacienteIdInicial }) {
           </>
         )}
       />
+      )}
 
-      {puedeRegistrar && (
+      {pacienteId && puedeRegistrar && (
         <Card style={{ marginTop: 16 }}>
           <div className="font-semibold text-sm mb-3">+ Registrar medicamento / procedimiento</div>
           {mensaje && <Banner tone={mensaje.tone}>{mensaje.texto}</Banner>}
@@ -116,12 +125,27 @@ export function TratamientoPage({ pacienteIdInicial }) {
               </Select>
             </FormField>
             <div className="col-span-1 sm:col-span-2 lg:col-span-4">
+              <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                <input type="checkbox" checked={esQuirurgico} onChange={(e) => setEsQuirurgico(e.target.checked)} />
+                Es un procedimiento quirúrgico (RF-13) — registrar personal médico involucrado
+              </label>
+            </div>
+            {esQuirurgico && (
+              <>
+                <FormField label="Cirujano"><TextInput value={form.cirujano} onChange={(e) => setForm((f) => ({ ...f, cirujano: e.target.value }))} /></FormField>
+                <FormField label="Ayudante"><TextInput value={form.ayudante} onChange={(e) => setForm((f) => ({ ...f, ayudante: e.target.value }))} /></FormField>
+                <FormField label="Instrumentista"><TextInput value={form.instrumentista} onChange={(e) => setForm((f) => ({ ...f, instrumentista: e.target.value }))} /></FormField>
+                <FormField label="Anestesiólogo"><TextInput value={form.anestesiologo} onChange={(e) => setForm((f) => ({ ...f, anestesiologo: e.target.value }))} /></FormField>
+              </>
+            )}
+            <div className="col-span-1 sm:col-span-2 lg:col-span-4">
               <Button type="submit" disabled={guardando}>{guardando ? "Guardando…" : "Registrar"}</Button>
             </div>
           </form>
         </Card>
       )}
 
+      {pacienteId && (
       <Card style={{ marginTop: 16 }}>
         <div className="font-semibold text-sm mb-3">Recetas médicas</div>
         <Table
@@ -157,26 +181,10 @@ export function TratamientoPage({ pacienteIdInicial }) {
           </form>
         )}
       </Card>
+      )}
 
-      <Modal open={!!recetaImprimir} onClose={() => setRecetaImprimir(null)} title="Receta médica" maxWidth={520}>
-        {recetaImprimir && (
-          <DocumentoImprimible titulo="Receta Médica" subtitulo={new Date(recetaImprimir.creadoEn).toLocaleString()}>
-            <div className="text-sm mb-4">
-              <div><strong>Paciente:</strong> {patient?.nombreCompleto}</div>
-              <div><strong>Historia clínica:</strong> {patient?.historiaClinica}</div>
-              {patient?.edad != null && <div><strong>Edad:</strong> {patient.edad} años</div>}
-            </div>
-            <div className="rounded-xl p-4 text-sm mb-4" style={{ border: "1px solid #ccc" }}>
-              <div className="font-bold mb-1">Rp/ {recetaImprimir.medicamento}</div>
-              <div className="mb-1"><strong>Dosis:</strong> {recetaImprimir.dosis}</div>
-              {recetaImprimir.duracion && <div className="mb-1"><strong>Duración:</strong> {recetaImprimir.duracion}</div>}
-              {recetaImprimir.indicaciones && <div><strong>Indicaciones:</strong> {recetaImprimir.indicaciones}</div>}
-            </div>
-            <div className="text-sm mt-8" style={{ borderTop: "1px solid #ccc", paddingTop: 8 }}>
-              <strong>Médico:</strong> {recetaImprimir.medico?.nombre}
-            </div>
-          </DocumentoImprimible>
-        )}
+      <Modal open={!!recetaImprimir} onClose={() => setRecetaImprimir(null)} title="Receta médica" maxWidth={620}>
+        {recetaImprimir && <RecetaImprimible receta={recetaImprimir} patient={patient} />}
       </Modal>
     </div>
   );

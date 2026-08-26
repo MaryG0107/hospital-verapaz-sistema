@@ -1,19 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { COLORS } from "../styles/tokens";
-
-// Rango Unicode de marcas diacriticas combinantes (U+0300 a U+036F),
-// construido por codigo para evitar literales no-ASCII en el fuente.
-const MARCAS_DIACRITICAS = new RegExp(
-  "[" + String.fromCharCode(0x0300) + "-" + String.fromCharCode(0x036f) + "]",
-  "g"
-);
-
-function normalizar(texto) {
-  return (texto || "")
-    .normalize("NFD")
-    .replace(MARCAS_DIACRITICAS, "")
-    .toLowerCase();
-}
+import { normalizarTexto as normalizar } from "../utils/texto";
 
 // Campo de texto con lista filtrable debajo, agrupada opcionalmente.
 // options: [{ value, label, group? }]
@@ -67,7 +54,7 @@ export function Combobox({ options, value, onChange, placeholder }) {
           if (e.target.value === "") onChange("");
         }}
         className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all duration-150 focus:border-navy focus:ring-2"
-        style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(31, 56, 100, 0.18)" }}
+        style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(15, 122, 61, 0.18)" }}
       />
       {abierto && (
         <div

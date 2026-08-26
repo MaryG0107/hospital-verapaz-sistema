@@ -4,15 +4,16 @@ import "dotenv/config";
 import bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 import { ROLES } from "../src/utils/roles.util.js";
+import { CIE10_CATALOGO } from "./data/cie10.js";
 
 const prisma = new PrismaClient();
 
-async function usuario(nombre, correo, password, rol, puedeAutogenerarToken = false) {
+async function usuario(nombre, correo, password, roles, puedeAutogenerarToken = false) {
   const passwordHash = await bcrypt.hash(password, 10);
   return prisma.usuario.upsert({
     where: { correo },
     update: {},
-    create: { nombre, correo, passwordHash, rol, puedeAutogenerarToken },
+    create: { nombre, correo, passwordHash, roles, puedeAutogenerarToken },
   });
 }
 
@@ -20,12 +21,13 @@ async function main() {
   const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@hospitalverapaz.gt";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD || "CambiarEsta123";
 
-  await usuario("Administrador General", adminEmail, adminPassword, ROLES.ADMIN);
-  await usuario("Recepción / Admisión", "recepcion@hospitalverapaz.gt", "Recepcion123", ROLES.RECEPCION);
-  await usuario("Dra. Ana Choc", "aChoc@hospitalverapaz.gt", "Consulta123", ROLES.CONSULTA, true); // RF-34
-  await usuario("Enfermería Turno Mañana", "enfermeria@hospitalverapaz.gt", "Enfermeria123", ROLES.ENFERMERIA);
-  await usuario("Facturación", "facturacion@hospitalverapaz.gt", "Facturacion123", ROLES.FACTURACION);
-  await usuario("Farmacia", "farmacia@hospitalverapaz.gt", "Farmacia123", ROLES.FARMACIA);
+  await usuario("Administrador General", adminEmail, adminPassword, [ROLES.ADMIN]);
+  await usuario("Recepción / Admisión", "recepcion@hospitalverapaz.gt", "Recepcion123", [ROLES.RECEPCION]);
+  await usuario("Dra. Ana Choc", "aChoc@hospitalverapaz.gt", "Consulta123", [ROLES.CONSULTA], true); // RF-34
+  await usuario("Enfermería Turno Mañana", "enfermeria@hospitalverapaz.gt", "Enfermeria123", [ROLES.ENFERMERIA]);
+  // ejemplo de un usuario con mas de un rol a la vez
+  await usuario("Facturación", "facturacion@hospitalverapaz.gt", "Facturacion123", [ROLES.FACTURACION, ROLES.RECEPCION]);
+  await usuario("Farmacia", "farmacia@hospitalverapaz.gt", "Farmacia123", [ROLES.FARMACIA]);
 
   await prisma.medicamentoInventario.createMany({
     data: [
@@ -35,6 +37,8 @@ async function main() {
     ],
     skipDuplicates: true,
   });
+
+  await prisma.catalogoCie10.createMany({ data: CIE10_CATALOGO, skipDuplicates: true });
 
   console.log("Seed completado.");
   console.log(`Administrador: ${adminEmail} / ${adminPassword}`);

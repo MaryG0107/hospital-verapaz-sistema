@@ -19,9 +19,11 @@ export async function obtenerUno(req, res) {
   res.json(item);
 }
 
-// RF-13/RF-14/RF-15: registrar medicamento o procedimiento con costo y origen
+// RF-13/RF-14/RF-15: registrar medicamento o procedimiento con costo y origen.
+// cirujano/ayudante/instrumentista/anestesiologo son opcionales: solo aplican
+// cuando el registro es un procedimiento quirurgico.
 export async function crear(req, res) {
-  const { pacienteId, descripcion, dosis, costo, origen } = req.body;
+  const { pacienteId, descripcion, dosis, costo, origen, cirujano, ayudante, instrumentista, anestesiologo } = req.body;
   if (!pacienteId || !descripcion || costo === undefined || !origen) {
     return res.status(400).json({ error: "pacienteId, descripcion, costo y origen son requeridos" });
   }
@@ -30,7 +32,7 @@ export async function crear(req, res) {
   }
 
   const item = await prisma.tratamientoItem.create({
-    data: { pacienteId: Number(pacienteId), descripcion, dosis, costo, origen },
+    data: { pacienteId: Number(pacienteId), descripcion, dosis, costo, origen, cirujano, ayudante, instrumentista, anestesiologo },
   });
   await registrarActividad(req.user.id, "registrar_tratamiento", descripcion);
   res.status(201).json(item);

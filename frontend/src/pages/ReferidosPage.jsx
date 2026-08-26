@@ -8,11 +8,11 @@ import { FormField, TextInput } from "../components/FormField";
 import { useFetch } from "../hooks/useFetch";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { ROLES } from "../utils/roles";
+import { ROLES, tieneRol } from "../utils/roles";
 
 export function ReferidosPage() {
   const { usuario } = useAuth();
-  const puedeRegistrar = [ROLES.RECEPCION, ROLES.ADMIN].includes(usuario.rol);
+  const puedeRegistrar = tieneRol(usuario, ROLES.RECEPCION, ROLES.ADMIN);
 
   const { data: medicos, loading, error, reload } = useFetch("/referidos");
   const [form, setForm] = useState({ nombre: "", especialidad: "", comisionQ: "" });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Printer } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
@@ -6,27 +6,25 @@ import { Table } from "../components/Table";
 import { Button } from "../components/Button";
 import { Banner } from "../components/Banner";
 import { Modal } from "../components/Modal";
-import { DocumentoImprimible } from "../components/DocumentoImprimible";
+import { FacturaImprimible } from "../components/FacturaImprimible";
 import { FormField, TextInput, Select } from "../components/FormField";
+import { PacienteBuscador } from "../components/PacienteBuscador";
 import { useFetch } from "../hooks/useFetch";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
-import { ROLES } from "../utils/roles";
+import { ROLES, tieneRol } from "../utils/roles";
 
 export function FinancieraPage() {
   const { usuario } = useAuth();
-  const puedeFacturar = [ROLES.FACTURACION, ROLES.ADMIN].includes(usuario.rol);
+  const puedeFacturar = tieneRol(usuario, ROLES.FACTURACION, ROLES.ADMIN);
 
   const { data: reporte, reload: reloadReporte } = useFetch("/facturacion/reporte");
   const { data: facturas, loading, error, reload: reloadFacturas } = useFetch("/facturacion");
-  const { data: pacientes } = useFetch("/pacientes");
   const [facturaImprimir, setFacturaImprimir] = useState(null);
 
-  const [pacienteId, setPacienteId] = useState(null);
-  useEffect(() => {
-    if (!pacienteId && pacientes?.length) setPacienteId(pacientes[0].id);
-  }, [pacientes, pacienteId]);
+  const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);
+  const pacienteId = pacienteSeleccionado?.id;
 
   const [form, setForm] = useState({ costoHospital: "", formaPago: "efectivo" });
   const [guardando, setGuardando] = useState(false);
@@ -52,8 +50,8 @@ export function FinancieraPage() {
   const stats = reporte
     ? [
         { label: "INGRESOS HOSPITAL", value: `Q ${reporte.ingresosHospital.toLocaleString()}`, color: COLORS.navy },
-        { label: "INGRESOS FARMACIA", value: `Q ${reporte.ingresosFarmacia.toLocaleString()}`, color: COLORS.teal },
-        { label: "TOTAL CONSOLIDADO", value: `Q ${reporte.totalConsolidado.toLocaleString()}`, color: COLORS.gold },
+        { label: "INGRESOS FARMACIA", value: `Q ${reporte.ingresosFarmacia.toLocaleString()}`, color: COLORS.gold },
+        { label: "TOTAL CONSOLIDADO", value: `Q ${reporte.totalConsolidado.toLocaleString()}`, color: COLORS.text },
       ]
     : [];
 
@@ -98,14 +96,12 @@ export function FinancieraPage() {
             El costo de tratamiento intrahospitalario pendiente se suma automáticamente al costo base (RF-17, RF-19).
           </p>
           {mensaje && <Banner tone={mensaje.tone}>{mensaje.texto}</Banner>}
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
+          <div className="mb-4">
             <FormField label="Paciente">
-              <Select required value={pacienteId || ""} onChange={(e) => setPacienteId(Number(e.target.value))}>
-                {(pacientes || []).map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombreCompleto} — {p.historiaClinica}</option>
-                ))}
-              </Select>
+              <PacienteBuscador pacienteSeleccionado={pacienteSeleccionado} onSelect={setPacienteSeleccionado} mostrarListado />
             </FormField>
+          </div>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
             <FormField label="Costo base hospital (Q)"><TextInput type="number" step="0.01" min="0" required value={form.costoHospital} onChange={(e) => setForm((f) => ({ ...f, costoHospital: e.target.value }))} /></FormField>
             <FormField label="Forma de pago">
               <Select value={form.formaPago} onChange={(e) => setForm((f) => ({ ...f, formaPago: e.target.value }))}>
@@ -120,31 +116,20 @@ export function FinancieraPage() {
         </Card>
       )}
 
-      <Modal open={!!facturaImprimir} onClose={() => setFacturaImprimir(null)} title="Factura de hospital" maxWidth={520}>
+      <Modal open={!!facturaImprimir} onClose={() => setFacturaImprimir(null)} title="Factura de hospital" maxWidth={620}>
         {facturaImprimir && (
-          <DocumentoImprimible
+          <FacturaImprimible
             titulo="Factura de Hospital"
-            subtitulo={`No. ${facturaImprimir.id} · ${new Date(facturaImprimir.creadoEn).toLocaleString()}`}
-          >
-            <div className="text-sm mb-4">
-              <div><strong>Paciente:</strong> {facturaImprimir.paciente?.nombreCompleto}</div>
-              <div><strong>Historia clínica:</strong> {facturaImprimir.paciente?.historiaClinica}</div>
-              <div><strong>Forma de pago:</strong> {facturaImprimir.formaPago === "efectivo" ? "Efectivo" : "Transferencia"}</div>
-            </div>
-            <table className="w-full text-sm mb-4">
-              <tbody>
-                <tr style={{ borderBottom: "1px solid #eee" }}>
-                  <td className="py-1.5">Costo base hospital</td>
-                  <td className="py-1.5 text-right">Q{Number(facturaImprimir.costoHospital).toFixed(2)}</td>
-                </tr>
-                <tr style={{ borderBottom: "1px solid #eee" }}>
-                  <td className="py-1.5">Costo de tratamiento intrahospitalario</td>
-                  <td className="py-1.5 text-right">Q{Number(facturaImprimir.costoTratamiento).toFixed(2)}</td>
-                </tr>
-              </tbody>
-            </table>
-            <div className="text-right font-bold text-base">Total: Q{Number(facturaImprimir.total).toFixed(2)}</div>
-          </DocumentoImprimible>
+            numero={facturaImprimir.id}
+            fecha={facturaImprimir.creadoEn}
+            paciente={facturaImprimir.paciente}
+            formaPago={facturaImprimir.formaPago}
+            lineas={[
+              { concepto: "Costo base hospital", subtotal: facturaImprimir.costoHospital },
+              { concepto: "Costo de tratamiento intrahospitalario", subtotal: facturaImprimir.costoTratamiento },
+            ]}
+            total={facturaImprimir.total}
+          />
         )}
       </Modal>
     </div>

@@ -1,7 +1,7 @@
 import React from "react";
 import { COLORS } from "../styles/tokens";
 
-export function Table({ headers, rows, renderRow, emptyMessage = "Sin datos por mostrar." }) {
+export function Table({ headers, rows, renderRow, emptyMessage = "Sin datos por mostrar.", onRowClick }) {
   return (
     <div className="bg-white rounded-2xl shadow-card border overflow-hidden" style={{ borderColor: COLORS.border }}>
       <div className="overflow-x-auto">
@@ -28,7 +28,12 @@ export function Table({ headers, rows, renderRow, emptyMessage = "Sin datos por 
               </tr>
             ) : (
               rows.map((row, i) => (
-                <tr key={row.id ?? i} className="transition-colors hover:bg-gray-50" style={{ borderTop: `1px solid ${COLORS.border}` }}>
+                <tr
+                  key={row.id ?? i}
+                  className={`transition-colors hover:bg-gray-50${onRowClick ? " cursor-pointer" : ""}`}
+                  style={{ borderTop: `1px solid ${COLORS.border}` }}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                >
                   {renderRow(row)}
                 </tr>
               ))

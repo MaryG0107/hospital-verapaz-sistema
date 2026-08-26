@@ -1,19 +1,36 @@
 import React, { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
+} from "recharts";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
 import { Table } from "../components/Table";
 import { Button } from "../components/Button";
-import { TextInput } from "../components/FormField";
+import { FormField, TextInput } from "../components/FormField";
 import { useFetch } from "../hooks/useFetch";
+import { usePaginatedFetch } from "../hooks/usePaginatedFetch";
+import { Pagination } from "../components/Pagination";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
-import { ROLES } from "../utils/roles";
+import { ROLES, tieneRol, etiquetasRoles } from "../utils/roles";
+import { etiquetaCondicionEgreso } from "../utils/condicionesEgreso";
+
+const tickStyle = { fontSize: 12, fill: COLORS.textMuted };
+const tooltipStyle = { borderRadius: 10, border: `1px solid ${COLORS.border}`, fontSize: 13, boxShadow: "0 4px 16px rgba(16,24,40,0.08)" };
+
+function formatoMes(mes) {
+  const [y, m] = mes.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("es-GT", { month: "short", year: "2-digit" });
+}
+function formatoQ(v) {
+  return `Q${Number(v).toLocaleString()}`;
+}
 
 export function ReportesPage() {
   const { usuario } = useAuth();
 
-  if (usuario.rol !== ROLES.ADMIN) {
+  if (!tieneRol(usuario, ROLES.ADMIN)) {
     return (
       <div>
         <PageHeader title="Reportes" />
@@ -24,10 +41,26 @@ export function ReportesPage() {
     );
   }
 
-  const { data: financiero } = useFetch("/reportes/financiero");
-  const { data: admisiones } = useFetch("/reportes/admisiones");
-  const { data: porFormaPago } = useFetch("/reportes/facturacion-por-forma-pago");
-  const { data: kardex } = useFetch("/reportes/inventario-kardex");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+  const rango = (desde ? `desde=${desde}` : "") + (desde && hasta ? "&" : "") + (hasta ? `hasta=${hasta}` : "");
+  const conRango = (path) => (rango ? `${path}${path.includes("?") ? "&" : "?"}${rango}` : path);
+
+  const { data: financiero } = useFetch(conRango("/reportes/financiero"));
+  const { data: admisiones } = useFetch(conRango("/reportes/admisiones"));
+  const { data: porFormaPago } = useFetch(conRango("/reportes/facturacion-por-forma-pago"));
+  const { data: ingresosPorMes } = useFetch(conRango("/reportes/ingresos-por-mes"));
+  const kardexPag = usePaginatedFetch(conRango("/reportes/inventario-kardex"), { pageSize: 20 });
+
+  const datosAdmisiones = (admisiones?.porCondicionEgreso || []).map((c) => ({
+    condicion: etiquetaCondicionEgreso(c.condicion),
+    total: c.total,
+  }));
+  const datosFormaPago = (porFormaPago || []).map((f) => ({
+    formaPago: f.formaPago === "efectivo" ? "Efectivo" : "Transferencia",
+    total: f.total,
+    cantidad: f.cantidad,
+  }));
 
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false);
   const [buscarInput, setBuscarInput] = useState("");
@@ -38,14 +71,29 @@ export function ReportesPage() {
     return () => clearTimeout(timeout);
   }, [buscarInput]);
 
-  const { data: auditoria, loading: cargandoAuditoria } = useFetch(
-    `/reportes/auditoria-diagnostico${buscarAuditoria ? `?buscar=${encodeURIComponent(buscarAuditoria)}` : ""}`,
-    { enabled: mostrarAuditoria }
+  const auditoriaPag = usePaginatedFetch(
+    conRango(`/reportes/auditoria-diagnostico${buscarAuditoria ? `?buscar=${encodeURIComponent(buscarAuditoria)}` : ""}`),
+    { pageSize: 20, enabled: mostrarAuditoria }
   );
 
   return (
     <div>
       <PageHeader title="Reportes" subtitle="Reportes administrativos y financieros para apoyar la toma de decisiones (RF-31)" />
+
+      <div className="flex items-end gap-3 flex-wrap mb-4">
+        <FormField label="Desde"><TextInput type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></FormField>
+        <FormField label="Hasta"><TextInput type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></FormField>
+        {(desde || hasta) && (
+          <button
+            onClick={() => { setDesde(""); setHasta(""); }}
+            className="text-xs font-semibold mb-2.5"
+            style={{ color: COLORS.navy }}
+          >
+            Limpiar rango
+          </button>
+        )}
+        <p className="text-xs mb-2.5" style={{ color: "#888" }}>El rango aplica a todas las gráficas y tablas de esta página.</p>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         <Card>
@@ -54,32 +102,71 @@ export function ReportesPage() {
         </Card>
         <Card>
           <div className="text-xs font-semibold" style={{ color: "#888" }}>INGRESOS FARMACIA</div>
-          <div className="text-2xl font-bold mt-1" style={{ color: COLORS.teal }}>Q {financiero?.ingresosFarmacia?.toLocaleString() ?? "—"}</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: COLORS.gold }}>Q {financiero?.ingresosFarmacia?.toLocaleString() ?? "—"}</div>
         </Card>
         <Card>
           <div className="text-xs font-semibold" style={{ color: "#888" }}>TOTAL CONSOLIDADO</div>
-          <div className="text-2xl font-bold mt-1" style={{ color: COLORS.gold }}>Q {financiero?.totalConsolidado?.toLocaleString() ?? "—"}</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: COLORS.text }}>Q {financiero?.totalConsolidado?.toLocaleString() ?? "—"}</div>
         </Card>
       </div>
 
+      <Card style={{ marginBottom: 16 }}>
+        <div className="font-semibold text-sm mb-1">Ingresos por mes</div>
+        <p className="text-xs mb-3" style={{ color: "#888" }}>Hospital vs. farmacia, agrupado por mes (RF-21)</p>
+        {ingresosPorMes?.length ? (
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={ingresosPorMes} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={4}>
+              <CartesianGrid vertical={false} stroke={COLORS.border} />
+              <XAxis dataKey="mes" tickFormatter={formatoMes} tick={tickStyle} axisLine={{ stroke: COLORS.border }} tickLine={false} />
+              <YAxis tickFormatter={formatoQ} tick={tickStyle} axisLine={false} tickLine={false} width={72} />
+              <Tooltip formatter={(v, name) => [formatoQ(v), name]} labelFormatter={formatoMes} contentStyle={tooltipStyle} cursor={{ fill: COLORS.lightBg }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} formatter={(value) => <span style={{ color: COLORS.textMuted }}>{value}</span>} />
+              <Bar dataKey="ingresosHospital" name="Hospital" fill={COLORS.navy} radius={[4, 4, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="ingresosFarmacia" name="Farmacia" fill={COLORS.gold} radius={[4, 4, 0, 0]} maxBarSize={28} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="text-sm py-6 text-center" style={{ color: "#888" }}>Todavía no hay facturas registradas para graficar.</p>
+        )}
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <Card>
-          <div className="font-semibold text-sm mb-3">Admisiones por condición de egreso</div>
-          <div className="text-sm mb-2" style={{ color: "#666" }}>Total de ingresos: {admisiones?.totalIngresos ?? "—"}</div>
-          {(admisiones?.porCondicionEgreso || []).map((c) => (
-            <div key={c.condicion} className="text-sm flex justify-between py-1" style={{ color: "#666" }}>
-              <span>{c.condicion}</span><span>{c.total}</span>
-            </div>
-          ))}
+          <div className="font-semibold text-sm mb-1">Admisiones por condición de egreso</div>
+          <p className="text-xs mb-3" style={{ color: "#888" }}>Total de ingresos en el periodo: {admisiones?.totalIngresos ?? "—"}</p>
+          {datosAdmisiones.length ? (
+            <ResponsiveContainer width="100%" height={Math.max(140, datosAdmisiones.length * 44)}>
+              <BarChart data={datosAdmisiones} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }}>
+                <CartesianGrid horizontal={false} stroke={COLORS.border} />
+                <XAxis type="number" allowDecimals={false} tick={tickStyle} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="condicion" tick={tickStyle} axisLine={false} tickLine={false} width={150} />
+                <Tooltip formatter={(v) => [v, "Pacientes"]} contentStyle={tooltipStyle} cursor={{ fill: COLORS.lightBg }} />
+                <Bar dataKey="total" fill={COLORS.navy} radius={[0, 4, 4, 0]} maxBarSize={20}>
+                  <LabelList dataKey="total" position="right" style={{ fill: COLORS.text, fontSize: 12 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm py-6 text-center" style={{ color: "#888" }}>Sin condiciones de egreso registradas todavía.</p>
+          )}
         </Card>
         <Card>
           <div className="font-semibold text-sm mb-3">Facturación por forma de pago</div>
-          {(porFormaPago || []).map((f) => (
-            <div key={f.formaPago} className="text-sm flex justify-between py-1" style={{ color: "#666" }}>
-              <span>{f.formaPago === "efectivo" ? "Efectivo" : "Transferencia"} ({f.cantidad})</span>
-              <span>Q{f.total.toFixed(2)}</span>
-            </div>
-          ))}
+          {datosFormaPago.length ? (
+            <ResponsiveContainer width="100%" height={Math.max(120, datosFormaPago.length * 60)}>
+              <BarChart data={datosFormaPago} layout="vertical" margin={{ top: 4, right: 60, left: 4, bottom: 4 }}>
+                <CartesianGrid horizontal={false} stroke={COLORS.border} />
+                <XAxis type="number" tickFormatter={formatoQ} tick={tickStyle} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="formaPago" tick={tickStyle} axisLine={false} tickLine={false} width={90} />
+                <Tooltip formatter={(v, n, p) => [`${formatoQ(v)} (${p.payload.cantidad} facturas)`, "Total"]} contentStyle={tooltipStyle} cursor={{ fill: COLORS.lightBg }} />
+                <Bar dataKey="total" fill={COLORS.navy} radius={[0, 4, 4, 0]} maxBarSize={28}>
+                  <LabelList dataKey="total" position="right" formatter={formatoQ} style={{ fill: COLORS.text, fontSize: 12 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm py-6 text-center" style={{ color: "#888" }}>Sin facturas registradas todavía.</p>
+          )}
         </Card>
       </div>
 
@@ -87,8 +174,8 @@ export function ReportesPage() {
         <div className="font-semibold text-sm mb-3">Kardex de inventario de farmacia (RNF-10)</div>
         <Table
           headers={["Medicamento", "Tipo", "Cantidad", "Motivo", "Fecha"]}
-          rows={kardex || []}
-          emptyMessage="Sin movimientos registrados."
+          rows={kardexPag.loading ? [] : kardexPag.items}
+          emptyMessage={kardexPag.loading ? "Cargando…" : "Sin movimientos registrados."}
           renderRow={(m) => (
             <>
               <td className="px-4 py-3">{m.medicamento?.nombre}</td>
@@ -99,6 +186,7 @@ export function ReportesPage() {
             </>
           )}
         />
+        <Pagination page={kardexPag.page} totalPages={kardexPag.totalPages} total={kardexPag.total} onChange={kardexPag.setPage} />
       </Card>
 
       <Card>
@@ -127,12 +215,12 @@ export function ReportesPage() {
             />
             <Table
               headers={["Usuario", "Rol", "Paciente", "Acción", "Tipo de acceso", "Fecha"]}
-              rows={cargandoAuditoria ? [] : auditoria || []}
-              emptyMessage={cargandoAuditoria ? "Cargando…" : "Sin accesos registrados."}
+              rows={auditoriaPag.loading ? [] : auditoriaPag.items}
+              emptyMessage={auditoriaPag.loading ? "Cargando…" : "Sin accesos registrados."}
               renderRow={(a) => (
                 <>
                   <td className="px-4 py-3 font-semibold">{a.usuario?.nombre}</td>
-                  <td className="px-4 py-3" style={{ color: "#666" }}>{a.usuario?.rol}</td>
+                  <td className="px-4 py-3" style={{ color: "#666" }}>{etiquetasRoles(a.usuario?.roles)}</td>
                   <td className="px-4 py-3">{a.paciente?.nombreCompleto} <span style={{ color: "#999" }}>({a.paciente?.historiaClinica})</span></td>
                   <td className="px-4 py-3">
                     <span
@@ -140,7 +228,7 @@ export function ReportesPage() {
                       style={
                         a.accion === "registrar"
                           ? { backgroundColor: "#FBF2E1", color: COLORS.gold }
-                          : { backgroundColor: "#EEF1FB", color: COLORS.navy }
+                          : { backgroundColor: "#E6F4EC", color: COLORS.navy }
                       }
                     >
                       {a.accion === "registrar" ? "Registro / edición" : "Visualización"}
@@ -153,6 +241,7 @@ export function ReportesPage() {
                 </>
               )}
             />
+            <Pagination page={auditoriaPag.page} totalPages={auditoriaPag.totalPages} total={auditoriaPag.total} onChange={auditoriaPag.setPage} />
           </div>
         )}
       </Card>

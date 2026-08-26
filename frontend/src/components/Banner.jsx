@@ -6,7 +6,7 @@ const TONES = {
   success: { bg: "#EAF7EF", color: COLORS.green, Icon: CheckCircle2 },
   error: { bg: "#FCECEA", color: COLORS.red, Icon: AlertTriangle },
   warning: { bg: "#FCECEA", color: COLORS.red, Icon: AlertTriangle },
-  info: { bg: "#EEF1FB", color: COLORS.navy, Icon: Info },
+  info: { bg: "#E8F5F5", color: COLORS.teal, Icon: Info },
 };
 
 export function Banner({ tone = "info", children }) {

@@ -5,11 +5,12 @@ import { Table } from "../components/Table";
 import { Button } from "../components/Button";
 import { Banner } from "../components/Banner";
 import { FormField, TextInput, Select } from "../components/FormField";
+import { RolesChecklist } from "../components/RolesChecklist";
 import { useFetch } from "../hooks/useFetch";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
-import { ROLES, ROLE_LABELS } from "../utils/roles";
+import { ROLES, tieneRol, etiquetasRoles } from "../utils/roles";
 
 const MINUTOS_EN_LINEA = 5;
 
@@ -25,7 +26,7 @@ function estadoConexion(ultimaActividad) {
 export function SeguridadPage() {
   const { usuario } = useAuth();
 
-  if (usuario.rol !== ROLES.ADMIN) {
+  if (!tieneRol(usuario, ROLES.ADMIN)) {
     return (
       <div>
         <PageHeader title="Seguridad y Roles de Usuario" />
@@ -46,7 +47,7 @@ export function SeguridadPage() {
 function SeguridadAdmin() {
   const { data: usuarios, loading, error, reload } = useFetch("/usuarios");
 
-  const [nuevo, setNuevo] = useState({ nombre: "", correo: "", password: "", rol: ROLES.RECEPCION, puedeAutogenerarToken: false });
+  const [nuevo, setNuevo] = useState({ nombre: "", correo: "", password: "", roles: [ROLES.RECEPCION], puedeAutogenerarToken: false });
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
@@ -62,12 +63,16 @@ function SeguridadAdmin() {
 
   async function crearUsuario(e) {
     e.preventDefault();
+    if (nuevo.roles.length === 0) {
+      setMensaje({ tone: "error", texto: "Seleccione al menos un rol." });
+      return;
+    }
     setGuardando(true);
     setMensaje(null);
     try {
       await api.post("/usuarios", nuevo);
       setMensaje({ tone: "success", texto: "Usuario creado." });
-      setNuevo({ nombre: "", correo: "", password: "", rol: ROLES.RECEPCION, puedeAutogenerarToken: false });
+      setNuevo({ nombre: "", correo: "", password: "", roles: [ROLES.RECEPCION], puedeAutogenerarToken: false });
       reload();
     } catch (err) {
       setMensaje({ tone: "error", texto: err.message });
@@ -83,6 +88,14 @@ function SeguridadAdmin() {
     } catch (err) {
       setMensaje({ tone: "error", texto: err.message });
     }
+  }
+
+  function onCambiarRoles(u, nuevosRoles) {
+    if (nuevosRoles.length === 0) {
+      setMensaje({ tone: "error", texto: `${u.nombre} debe conservar al menos un rol.` });
+      return;
+    }
+    actualizarUsuario(u.id, { roles: nuevosRoles });
   }
 
   async function emitirToken(e) {
@@ -106,27 +119,25 @@ function SeguridadAdmin() {
       {error && <Banner tone="error">{error}</Banner>}
 
       <Table
-        headers={["Usuario", "Correo", "Rol", "Autogenera token", "Estado"]}
+        headers={["Usuario", "Correo", "Roles (un usuario puede tener varios)", "Autogenera token", "Estado"]}
         rows={loading ? [] : usuarios || []}
         emptyMessage={loading ? "Cargando…" : "Sin usuarios registrados."}
         renderRow={(u) => {
           const estado = estadoConexion(u.ultimaActividad);
           return (
             <>
-              <td className="px-4 py-3 font-semibold">{u.nombre}</td>
-              <td className="px-4 py-3" style={{ color: "#666" }}>{u.correo}</td>
-              <td className="px-4 py-3">
-                <Select value={u.rol} onChange={(e) => actualizarUsuario(u.id, { rol: e.target.value })} style={{ margin: 0, width: "auto" }}>
-                  {Object.values(ROLES).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                </Select>
+              <td className="px-4 py-3 font-semibold align-top">{u.nombre}</td>
+              <td className="px-4 py-3 align-top" style={{ color: "#666" }}>{u.correo}</td>
+              <td className="px-4 py-3 align-top" style={{ minWidth: 260 }}>
+                <RolesChecklist value={u.roles} onChange={(roles) => onCambiarRoles(u, roles)} />
               </td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 align-top">
                 <label className="flex items-center gap-2 text-xs" style={{ color: "#666" }}>
                   <input type="checkbox" checked={u.puedeAutogenerarToken} onChange={(e) => actualizarUsuario(u.id, { puedeAutogenerarToken: e.target.checked })} />
                   RF-34
                 </label>
               </td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 align-top">
                 <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: estado.enLinea ? COLORS.green : "#888" }}>
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: estado.enLinea ? COLORS.green : "#C4C9D4" }} />
                   {estado.texto}
@@ -144,10 +155,8 @@ function SeguridadAdmin() {
             <FormField label="Nombre"><TextInput required value={nuevo.nombre} onChange={(e) => setNuevo((f) => ({ ...f, nombre: e.target.value }))} /></FormField>
             <FormField label="Correo"><TextInput type="email" required value={nuevo.correo} onChange={(e) => setNuevo((f) => ({ ...f, correo: e.target.value }))} /></FormField>
             <FormField label="Contraseña temporal"><TextInput type="password" required value={nuevo.password} onChange={(e) => setNuevo((f) => ({ ...f, password: e.target.value }))} /></FormField>
-            <FormField label="Rol">
-              <Select value={nuevo.rol} onChange={(e) => setNuevo((f) => ({ ...f, rol: e.target.value }))}>
-                {Object.values(ROLES).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-              </Select>
+            <FormField label="Roles (puede marcar más de uno)">
+              <RolesChecklist value={nuevo.roles} onChange={(roles) => setNuevo((f) => ({ ...f, roles }))} />
             </FormField>
             <label className="flex items-center gap-2 text-sm" style={{ color: "#444" }}>
               <input type="checkbox" checked={nuevo.puedeAutogenerarToken} onChange={(e) => setNuevo((f) => ({ ...f, puedeAutogenerarToken: e.target.checked }))} />
@@ -166,8 +175,8 @@ function SeguridadAdmin() {
             <FormField label="Usuario">
               <Select required value={tokenForm.usuarioId} onChange={(e) => setTokenForm({ usuarioId: e.target.value })}>
                 <option value="">Seleccionar…</option>
-                {(usuarios || []).filter((u) => u.rol !== ROLES.ADMIN).map((u) => (
-                  <option key={u.id} value={u.id}>{u.nombre} ({ROLE_LABELS[u.rol]})</option>
+                {(usuarios || []).filter((u) => !u.roles.includes(ROLES.ADMIN)).map((u) => (
+                  <option key={u.id} value={u.id}>{u.nombre} ({etiquetasRoles(u.roles)})</option>
                 ))}
               </Select>
             </FormField>

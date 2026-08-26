@@ -1,10 +1,11 @@
 // Controlador: Registro y Admision (Modulo 1)
 import { prisma } from "../config/prisma.js";
 import { registrarActividad } from "../services/actividad.service.js";
+import { leerPaginacion } from "../utils/paginacion.util.js";
 
 const CAMPOS_PACIENTE = [
   "nombreCompleto", "dpi", "direccion", "lugarNacimiento", "fechaNacimiento",
-  "telefono", "edad", "sexo", "estadoCivil", "ocupacion", "religion", "nacionalidad",
+  "telefono", "edad", "sexo", "tipoSangre", "estadoCivil", "ocupacion", "religion", "nacionalidad",
   "nombreConyuge", "nombrePadre", "nombreMadre", "contactoEmergencia", "telefonoEmergencia", "parentesco",
   "referidoDe", "medicoReferenteId", "serviciosSolicitados", "impresionClinicaIngreso",
   "fechaIngreso", "fechaEgreso", "diagnosticoEgresoCodigo", "complicacionesCodigo",
@@ -15,8 +16,8 @@ function tomarCampos(body) {
   const data = {};
   for (const campo of CAMPOS_PACIENTE) {
     if (body[campo] === undefined) continue;
-    if (["fechaNacimiento", "fechaIngreso", "fechaEgreso"].includes(campo) && body[campo]) {
-      data[campo] = new Date(body[campo]);
+    if (["fechaNacimiento", "fechaIngreso", "fechaEgreso"].includes(campo)) {
+      data[campo] = body[campo] ? new Date(body[campo]) : null;
     } else {
       data[campo] = body[campo];
     }
@@ -41,6 +42,18 @@ export async function listar(req, res) {
         ],
       }
     : undefined;
+
+  // Paginado solo si el caller manda "page" (la pantalla de "Pacientes
+  // registrados"). Los <select> de otras pantallas siguen pidiendo la
+  // lista completa (tope 50) igual que antes.
+  if (req.query.page) {
+    const { page, pageSize, skip, take } = leerPaginacion(req);
+    const [items, total] = await Promise.all([
+      prisma.paciente.findMany({ where, orderBy: { creadoEn: "desc" }, skip, take }),
+      prisma.paciente.count({ where }),
+    ]);
+    return res.json({ items, total, page, pageSize });
+  }
 
   const pacientes = await prisma.paciente.findMany({
     where,

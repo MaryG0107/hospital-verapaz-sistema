@@ -86,25 +86,39 @@ body {
   animation: heartbeat 2.4s ease-in-out infinite;
 }
 
-/* Impresion de facturas/recetas: solo se imprime lo que este dentro de
-   #printable-area (ver components/DocumentoImprimible.jsx). Todo lo demas
-   (sidebar, modal, botones) queda oculto en el papel/PDF. */
+/* Impresion de facturas/recetas: el Modal (ver components/Modal.jsx) se monta
+   con un portal directo a <body>, fuera de #root, para que aqui baste con
+   ocultar #root completo. Antes se usaba el truco de "visibility:hidden en
+   todo menos #printable-area", pero como el Modal vivia dentro de #root
+   (detras de listas largas, con height preservado por visibility:hidden),
+   el navegador paginaba el area imprimible en una pagina distinta y la
+   cortaba a medias. Con el portal, ocultar #root no afecta al modal. */
+@page {
+  margin: 12mm;
+}
 @media print {
-  body * {
-    visibility: hidden;
-  }
-  #printable-area,
-  #printable-area * {
-    visibility: visible;
-  }
-  #printable-area {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    padding: 16px;
+  #root {
+    display: none !important;
   }
   .no-print {
     display: none !important;
+  }
+  #printable-area {
+    padding: 16px;
+  }
+  /* Chrome omite background-color/background-image al imprimir salvo que se
+     fuerce explicitamente (independiente del check "Graficos de fondo" del
+     dialogo) — sin esto, las barras y tablas verdes de recetas/facturas
+     salian en blanco con solo el texto. */
+  #printable-area * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .modal-overlay,
+  [role="dialog"] {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    box-shadow: none !important;
   }
 }

@@ -19,9 +19,13 @@ export function requireAuth(req, res, next) {
 }
 
 // Restringe el acceso a ciertos roles (ej. solo Administrador) - RF-30/RF-32
+// Un usuario puede tener varios roles a la vez: basta con que uno de los
+// suyos coincida con alguno de los permitidos para esta ruta.
 export function requireRole(...rolesPermitidos) {
   return (req, res, next) => {
-    if (!rolesPermitidos.includes(req.user?.rol)) {
+    const rolesUsuario = req.user?.roles || [];
+    const tienePermiso = rolesUsuario.some((r) => rolesPermitidos.includes(r));
+    if (!tienePermiso) {
       return res.status(403).json({ error: "No tiene permiso para esta accion" });
     }
     next();
@@ -33,7 +37,7 @@ export function requireRole(...rolesPermitidos) {
 // permanente y no necesita token (RF-11). El token es de un solo uso y
 // se marca como consumido al validarse (RNF-12).
 export async function requireTempToken(req, res, next) {
-  if (req.user?.rol === ROLES.ADMIN) return next();
+  if (req.user?.roles?.includes(ROLES.ADMIN)) return next();
 
   const tokenValue = req.headers["x-temp-token"];
   if (!tokenValue) {

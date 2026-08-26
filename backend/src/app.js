@@ -14,6 +14,7 @@ import facturacionRoutes from "./routes/facturacion.routes.js";
 import farmaciaRoutes from "./routes/farmacia.routes.js";
 import bitacoraRoutes from "./routes/bitacora.routes.js";
 import reportesRoutes from "./routes/reportes.routes.js";
+import cie10Routes from "./routes/cie10.routes.js";
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/facturacion", facturacionRoutes); // Modulo 5 - Area Financiera
 app.use("/api/farmacia", farmaciaRoutes);       // Modulo 6 - Farmacia
 app.use("/api/bitacora", bitacoraRoutes);       // Modulo 7 - Bitacora de Visitas
 app.use("/api/reportes", reportesRoutes);       // Modulo 9 - Reportes
+app.use("/api/cie10", cie10Routes);             // Catalogo de codigos CIE-10
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 

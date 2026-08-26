@@ -1,8 +1,10 @@
-// Design tokens del sistema (paleta hospital: navy/dorado, con neutrales de apoyo)
+// Design tokens del sistema (paleta hospital: verde institucional/dorado, con neutrales de apoyo)
+// "navy" se mantiene como nombre de la clave (usada en todo el frontend) pero
+// ahora es el verde de marca tomado del logo (ver src/assets/logo-verapaz.png).
 export const COLORS = {
-  navy: "#1F3864",
-  navyDark: "#152A4E",
-  navyLight: "#2C4A80",
+  navy: "#0F7A3D",
+  navyDark: "#0A5C2E",
+  navyLight: "#1C9752",
   gold: "#B08B2E",
   goldLight: "#D4AF54",
   lightBg: "#F2F4F8",

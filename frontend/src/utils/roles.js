@@ -16,3 +16,13 @@ export const ROLE_LABELS = {
   Facturacion: "Facturación",
   Farmacia: "Farmacia",
 };
+
+// Un usuario puede tener mas de un rol a la vez (ej. Recepcion + Facturacion).
+// true si alguno de los roles del usuario esta entre los permitidos.
+export function tieneRol(usuario, ...rolesPermitidos) {
+  return (usuario?.roles || []).some((r) => rolesPermitidos.includes(r));
+}
+
+export function etiquetasRoles(roles) {
+  return (roles || []).map((r) => ROLE_LABELS[r] || r).join(", ");
+}

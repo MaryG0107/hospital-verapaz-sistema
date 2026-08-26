@@ -1,37 +1,240 @@
 import React, { useEffect, useState } from "react";
-import { ShieldAlert, KeyRound } from "lucide-react";
+import { ShieldAlert, KeyRound, Plus, Trash2, History, EyeOff } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
 import { Banner } from "../components/Banner";
 import { Modal } from "../components/Modal";
 import { FormField, TextInput, Select, TextArea } from "../components/FormField";
+import { Cie10Input } from "../components/Cie10Input";
+import { PacienteBuscador } from "../components/PacienteBuscador";
+import { abrirArchivoDataUrl } from "../utils/archivos";
 import { useFetch } from "../hooks/useFetch";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
-import { ROLES } from "../utils/roles";
+import { ROLES, tieneRol } from "../utils/roles";
+
+const TIPOS_ATENCION = [
+  { value: "consulta_externa", label: "Consulta externa" },
+  { value: "emergencia", label: "Emergencia" },
+  { value: "hospitalizacion", label: "Hospitalización" },
+  { value: "seguimiento", label: "Seguimiento" },
+];
+
+const SIGNOS_SINTOMAS = [
+  "Dolor", "Fiebre", "Náuseas", "Vómitos", "Diarrea",
+  "Tos", "Dificultad respiratoria", "Sangrado", "Alteración del estado de conciencia",
+];
+
+const SISTEMAS_EXPLORACION = [
+  { key: "general", label: "General" },
+  { key: "cabezaCuello", label: "Cabeza / Cuello" },
+  { key: "cardiovascular", label: "Cardiovascular" },
+  { key: "respiratorio", label: "Respiratorio" },
+  { key: "abdomen", label: "Abdomen" },
+  { key: "neurologico", label: "Neurológico" },
+  { key: "extremidades", label: "Extremidades" },
+  { key: "piel", label: "Piel" },
+  { key: "otros", label: "Otros hallazgos" },
+];
+
+const TIPOS_DIAGNOSTICO = ["Presuntivo", "Definitivo"];
+const PRIORIDADES_DIAGNOSTICO = ["Principal", "Secundario"];
+const ESTADOS_DIAGNOSTICO = ["Activo", "Resuelto", "Crónico"];
+
+function ahoraFecha() { return new Date().toISOString().slice(0, 10); }
+function ahoraHora() { return new Date().toTimeString().slice(0, 5); }
+
+function datosVacios() {
+  return {
+    fecha: ahoraFecha(),
+    hora: ahoraHora(),
+    especialidad: "",
+    motivoConsulta: "",
+    historiaEnfermedad: "",
+    signosSintomas: [],
+    signosSintomasOtros: "",
+    signosVitales: { pa: "", fc: "", fr: "", temp: "", spo2: "", peso: "", talla: "" },
+    exploracionFisica: { general: "", cabezaCuello: "", cardiovascular: "", respiratorio: "", abdomen: "", neurologico: "", extremidades: "", piel: "", otros: "" },
+    estudios: [],
+    diagnosticoPrincipal: { diagnostico: "", codigoCie: "", tipo: "Definitivo", prioridad: "Principal", estado: "Activo", fecha: ahoraFecha() },
+    diagnosticosSecundarios: [],
+    impresionClinica: "",
+    planConducta: "",
+  };
+}
+
+function calcularIMC(peso, talla) {
+  const p = Number(peso), t = Number(talla);
+  if (!p || !t) return null;
+  return (p / (t * t)).toFixed(1);
+}
+
+// Reutilizado tanto para el diagnostico vigente como para cada entrada del
+// historial (ver mas abajo) — mismo formato de lectura en los dos casos.
+function DiagnosticoDetalle({ d }) {
+  return (
+    <>
+      <p className="text-xs mb-4" style={{ color: "#888" }}>
+        Registrado: {new Date(d.creadoEn).toLocaleString()}
+        {d.registradoPor && <> · {d.registradoPor}</>}
+        {d.tipoAtencion && <> · {TIPOS_ATENCION.find((t) => t.value === d.tipoAtencion)?.label || d.tipoAtencion}</>}
+        {d.servicio && <> · {d.servicio}</>}
+        {d.salaCama && <> · Sala/Cama: {d.salaCama}</>}
+      </p>
+
+      {d.legacyTexto ? (
+        <div className="rounded-xl p-3 text-sm" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${COLORS.border}` }}>
+          <p className="text-xs mb-2" style={{ color: "#888" }}>Registrado antes de la plantilla estructurada — texto libre. Código CIE: {d.codigoCie || "—"}</p>
+          {d.legacyTexto}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {d.datos?.motivoConsulta && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Motivo de consulta</div>
+              <div className="text-sm">{d.datos.motivoConsulta}</div>
+            </div>
+          )}
+          {d.datos?.historiaEnfermedad && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Historia de la enfermedad actual</div>
+              <div className="text-sm whitespace-pre-wrap">{d.datos.historiaEnfermedad}</div>
+            </div>
+          )}
+          {d.datos?.signosSintomas?.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Signos y síntomas</div>
+              <div className="text-sm">{d.datos.signosSintomas.join(", ")}{d.datos.signosSintomasOtros ? `, ${d.datos.signosSintomasOtros}` : ""}</div>
+            </div>
+          )}
+          {d.datos?.signosVitales && Object.values(d.datos.signosVitales).some(Boolean) && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Signos vitales</div>
+              <div className="text-sm flex flex-wrap gap-x-5 gap-y-1">
+                {d.datos.signosVitales.pa && <span><strong>PA:</strong> {d.datos.signosVitales.pa}</span>}
+                {d.datos.signosVitales.fc && <span><strong>FC:</strong> {d.datos.signosVitales.fc} lpm</span>}
+                {d.datos.signosVitales.fr && <span><strong>FR:</strong> {d.datos.signosVitales.fr} rpm</span>}
+                {d.datos.signosVitales.temp && <span><strong>Temp:</strong> {d.datos.signosVitales.temp} °C</span>}
+                {d.datos.signosVitales.spo2 && <span><strong>SpO₂:</strong> {d.datos.signosVitales.spo2}%</span>}
+                {d.datos.signosVitales.peso && <span><strong>Peso:</strong> {d.datos.signosVitales.peso} kg</span>}
+                {d.datos.signosVitales.talla && <span><strong>Talla:</strong> {d.datos.signosVitales.talla} m</span>}
+                {calcularIMC(d.datos.signosVitales.peso, d.datos.signosVitales.talla) && (
+                  <span><strong>IMC:</strong> {calcularIMC(d.datos.signosVitales.peso, d.datos.signosVitales.talla)}</span>
+                )}
+              </div>
+            </div>
+          )}
+          {d.datos?.exploracionFisica && Object.values(d.datos.exploracionFisica).some(Boolean) && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Exploración física</div>
+              <div className="flex flex-col gap-1 text-sm">
+                {SISTEMAS_EXPLORACION.filter((s) => d.datos.exploracionFisica[s.key]).map((s) => (
+                  <div key={s.key}><strong>{s.label}:</strong> {d.datos.exploracionFisica[s.key]}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {d.datos?.estudios?.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Estudios y resultados</div>
+              <div className="flex flex-col gap-1 text-sm">
+                {d.datos.estudios.map((e, i) => (
+                  <div key={i}>
+                    <strong>{e.tipo || "Estudio"}</strong>{e.fecha ? ` (${new Date(e.fecha).toLocaleDateString()})` : ""}: {e.resultado || "—"}
+                    {e.archivoDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => abrirArchivoDataUrl(e.archivoDataUrl)}
+                        className="ml-2 font-semibold"
+                        style={{ color: COLORS.navy }}
+                      >
+                        Ver archivo{e.archivoNombre ? ` (${e.archivoNombre})` : ""}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {d.datos?.diagnosticoPrincipal?.diagnostico && (
+            <div className="rounded-xl p-3" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${COLORS.border}` }}>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Diagnóstico principal</div>
+              <div className="text-sm font-semibold">{d.datos.diagnosticoPrincipal.diagnostico}</div>
+              <div className="text-xs mt-1" style={{ color: "#666" }}>
+                Código CIE-10: {d.datos.diagnosticoPrincipal.codigoCie || "—"} · {d.datos.diagnosticoPrincipal.tipo} · {d.datos.diagnosticoPrincipal.estado}
+              </div>
+            </div>
+          )}
+          {d.datos?.diagnosticosSecundarios?.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Diagnósticos secundarios</div>
+              <div className="flex flex-col gap-1 text-sm">
+                {d.datos.diagnosticosSecundarios.map((s, i) => (
+                  <div key={i}>{s.diagnostico} {s.codigoCie && <span style={{ color: "#888" }}>({s.codigoCie})</span>} — {s.estado}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {d.datos?.impresionClinica && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Impresión clínica</div>
+              <div className="text-sm whitespace-pre-wrap">{d.datos.impresionClinica}</div>
+            </div>
+          )}
+          {d.datos?.planConducta && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#888" }}>Plan y conducta</div>
+              <div className="text-sm whitespace-pre-wrap">{d.datos.planConducta}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function SeccionTitulo({ n, children }) {
+  return (
+    <div className="font-semibold text-sm mb-3 flex items-center gap-1.5" style={{ color: COLORS.navy }}>
+      <span className="text-xs font-bold" style={{ color: COLORS.gold }}>{n}.</span> {children}
+    </div>
+  );
+}
 
 export function ExpedientePage({ pacienteIdInicial }) {
   const { usuario } = useAuth();
-  const esAdmin = usuario.rol === ROLES.ADMIN;
+  const esAdmin = tieneRol(usuario, ROLES.ADMIN);
 
-  const { data: pacientes } = useFetch("/pacientes");
   const [selectedId, setSelectedId] = useState(pacienteIdInicial || null);
-
-  useEffect(() => {
-    if (!selectedId && pacientes?.length) setSelectedId(pacientes[0].id);
-  }, [pacientes, selectedId]);
+  // Un solo paciente por id (no una lista completa): con volumen alto de
+  // pacientes, cargar todos de una vez para un <select> deja de ser viable.
+  const { data: patient } = useFetch(selectedId ? `/pacientes/${selectedId}` : null, { enabled: !!selectedId });
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [tempToken, setTempToken] = useState("");
   const [tokenInfo, setTokenInfo] = useState(null);
   const [diagnostico, setDiagnostico] = useState(null);
   const [estado, setEstado] = useState("idle"); // idle | cargando | visible | sin-registro
+  const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [mensajeError, setMensajeError] = useState(null);
+  const [sistemaActivo, setSistemaActivo] = useState("general");
 
-  const [texto, setTexto] = useState("");
-  const [codigoCie, setCodigoCie] = useState("");
+  const [tipoAtencion, setTipoAtencion] = useState("");
+  const [servicio, setServicio] = useState("");
+  const [salaCama, setSalaCama] = useState("");
+
+  // Sala/Cama solo tiene sentido si al paciente le asignaron una cama
+  // (hospitalizacion o emergencia); en consulta externa o seguimiento no
+  // aplica, asi que se oculta y se limpia si el usuario cambia de opcion.
+  const requiereSalaCama = tipoAtencion === "hospitalizacion" || tipoAtencion === "emergencia";
+  function handleTipoAtencionChange(valor) {
+    setTipoAtencion(valor);
+    if (valor !== "hospitalizacion" && valor !== "emergencia") setSalaCama("");
+  }
+  const [datos, setDatos] = useState(datosVacios());
+  const [archivosEstudios, setArchivosEstudios] = useState([]); // File[] paralelo a datos.estudios, no viaja en el JSON
   const [guardando, setGuardando] = useState(false);
   const [mensajeGuardado, setMensajeGuardado] = useState(null);
 
@@ -81,17 +284,71 @@ export function ExpedientePage({ pacienteIdInicial }) {
     }
   }
 
+  function setCampoDatos(campo, valor) {
+    setDatos((d) => ({ ...d, [campo]: valor }));
+  }
+  function setCampoVital(campo, valor) {
+    setDatos((d) => ({ ...d, signosVitales: { ...d.signosVitales, [campo]: valor } }));
+  }
+  function setCampoExploracion(valor) {
+    setDatos((d) => ({ ...d, exploracionFisica: { ...d.exploracionFisica, [sistemaActivo]: valor } }));
+  }
+  function toggleSintoma(s) {
+    setDatos((d) => ({
+      ...d,
+      signosSintomas: d.signosSintomas.includes(s) ? d.signosSintomas.filter((x) => x !== s) : [...d.signosSintomas, s],
+    }));
+  }
+  function setCampoPrincipal(campo, valor) {
+    setDatos((d) => ({ ...d, diagnosticoPrincipal: { ...d.diagnosticoPrincipal, [campo]: valor } }));
+  }
+
+  function agregarEstudio() {
+    setDatos((d) => ({ ...d, estudios: [...d.estudios, { tipo: "", fecha: ahoraFecha(), resultado: "" }] }));
+    setArchivosEstudios((a) => [...a, null]);
+  }
+  function actualizarEstudio(i, campo, valor) {
+    setDatos((d) => ({ ...d, estudios: d.estudios.map((e, idx) => (idx === i ? { ...e, [campo]: valor } : e)) }));
+  }
+  function quitarEstudio(i) {
+    setDatos((d) => ({ ...d, estudios: d.estudios.filter((_, idx) => idx !== i) }));
+    setArchivosEstudios((a) => a.filter((_, idx) => idx !== i));
+  }
+  function setArchivoEstudio(i, file) {
+    setArchivosEstudios((a) => a.map((f, idx) => (idx === i ? file : f)));
+  }
+
+  function agregarSecundario() {
+    setDatos((d) => ({ ...d, diagnosticosSecundarios: [...d.diagnosticosSecundarios, { diagnostico: "", codigoCie: "", estado: "Activo" }] }));
+  }
+  function actualizarSecundario(i, campo, valor) {
+    setDatos((d) => ({ ...d, diagnosticosSecundarios: d.diagnosticosSecundarios.map((s, idx) => (idx === i ? { ...s, [campo]: valor } : s)) }));
+  }
+  function quitarSecundario(i) {
+    setDatos((d) => ({ ...d, diagnosticosSecundarios: d.diagnosticosSecundarios.filter((_, idx) => idx !== i) }));
+  }
+
   async function guardarDiagnostico(e) {
     e.preventDefault();
     setGuardando(true);
     setMensajeGuardado(null);
     try {
-      await api.post(`/expedientes/paciente/${selectedId}`, { texto, codigoCie }, { headers: headersToken() });
+      const formData = new FormData();
+      formData.append("datos", JSON.stringify(datos));
+      formData.append("codigoCie", datos.diagnosticoPrincipal.codigoCie || "");
+      formData.append("tipoAtencion", tipoAtencion);
+      formData.append("servicio", servicio);
+      formData.append("salaCama", salaCama);
+      archivosEstudios.forEach((file, i) => { if (file) formData.append(`estudio_${i}`, file); });
+
+      await api.post(`/expedientes/paciente/${selectedId}`, formData, { headers: headersToken() });
       setMensajeGuardado({ tone: "success", texto: "Diagnóstico registrado correctamente." });
-      setTexto("");
-      setCodigoCie("");
+      setDatos(datosVacios());
+      setArchivosEstudios([]);
+      setSistemaActivo("general");
       setEstado("idle");
       setDiagnostico(null);
+      setMostrarHistorial(false);
     } catch (err) {
       setMensajeGuardado({ tone: "error", texto: err.message });
     } finally {
@@ -99,34 +356,29 @@ export function ExpedientePage({ pacienteIdInicial }) {
     }
   }
 
-  const patient = pacientes?.find((p) => p.id === selectedId);
+  const imc = calcularIMC(datos.signosVitales.peso, datos.signosVitales.talla);
+
+  function seleccionarPaciente(p) {
+    setSelectedId(p.id);
+    setEstado("idle");
+    setDiagnostico(null);
+    setTempToken("");
+    setTokenInfo(null);
+    setMostrarHistorial(false);
+  }
 
   return (
     <div>
       <PageHeader title="Expediente Clínico" />
       <div className="mb-4">
-        <Select
-          value={selectedId || ""}
-          onChange={(e) => {
-            setSelectedId(Number(e.target.value));
-            setEstado("idle");
-            setDiagnostico(null);
-            setTempToken("");
-            setTokenInfo(null);
-          }}
-          style={{ maxWidth: 360 }}
-        >
-          {(pacientes || []).map((p) => (
-            <option key={p.id} value={p.id}>{p.nombreCompleto} — {p.historiaClinica}</option>
-          ))}
-        </Select>
+        <PacienteBuscador pacienteSeleccionado={patient} onSelect={seleccionarPaciente} mostrarListado />
       </div>
 
       {patient && (
         <Card style={{ marginBottom: 16 }}>
           <div className="font-semibold text-sm mb-2">Datos básicos del paciente</div>
           <div className="text-sm" style={{ color: "#666" }}>
-            {patient.nombreCompleto} · {patient.historiaClinica} · {patient.edad ?? "—"} años · {patient.sexo ?? "—"}
+            {patient.nombreCompleto} · {patient.historiaClinica} · {patient.edad ?? "—"} años · {patient.sexo ?? "—"} · Sangre: {patient.tipoSangre ?? "—"}
           </div>
         </Card>
       )}
@@ -140,12 +392,31 @@ export function ExpedientePage({ pacienteIdInicial }) {
       {estado === "visible" && diagnostico && (
         <Card style={{ border: `2px solid ${COLORS.gold}`, marginBottom: 16 }}>
           <div className="font-semibold text-sm mb-1">🔓 Diagnóstico confidencial</div>
-          <p className="text-xs mb-3" style={{ color: "#888" }}>
-            Código CIE: {diagnostico.codigoCie || "—"} · Registrado: {new Date(diagnostico.creadoEn).toLocaleString()}
-          </p>
-          <div className="rounded-xl p-3 text-sm" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${COLORS.border}` }}>
-            {diagnostico.diagnostico}
-          </div>
+          <DiagnosticoDetalle d={diagnostico} />
+
+          {diagnostico.historial?.length > 0 && (
+            <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${COLORS.border}` }}>
+              <button
+                type="button"
+                onClick={() => setMostrarHistorial((v) => !v)}
+                className="flex items-center gap-1.5 text-xs font-semibold"
+                style={{ color: COLORS.navy }}
+              >
+                {mostrarHistorial ? <EyeOff size={13} /> : <History size={13} />}
+                {mostrarHistorial ? "Ocultar historial" : `Ver historial (${diagnostico.historial.length} versión${diagnostico.historial.length > 1 ? "es" : ""} anterior${diagnostico.historial.length > 1 ? "es" : ""})`}
+              </button>
+
+              {mostrarHistorial && (
+                <div className="flex flex-col gap-3 mt-4 animate-fade-in">
+                  {diagnostico.historial.map((h) => (
+                    <div key={h.id} className="rounded-xl p-3" style={{ border: `1px solid ${COLORS.border}` }}>
+                      <DiagnosticoDetalle d={h} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
@@ -183,17 +454,187 @@ export function ExpedientePage({ pacienteIdInicial }) {
         )}
       </Modal>
 
-      {(esAdmin || tempToken) && (
+      {selectedId && (esAdmin || tempToken) && (
         <Card>
-          <div className="font-semibold text-sm mb-3">Registrar diagnóstico (RF-10)</div>
+          <div className="font-semibold text-sm mb-1">Registrar diagnóstico (RF-10)</div>
+          <p className="text-xs mb-4" style={{ color: "#888" }}>
+            Médico responsable: <strong>{usuario.nombre}</strong> — se toma de la sesión activa, no es editable.
+          </p>
           {mensajeGuardado && <Banner tone={mensajeGuardado.tone}>{mensajeGuardado.texto}</Banner>}
-          <form onSubmit={guardarDiagnostico} className="flex flex-col gap-4">
-            <FormField label="Diagnóstico">
-              <TextArea required rows={4} value={texto} onChange={(e) => setTexto(e.target.value)} />
-            </FormField>
-            <FormField label="Código CIE (opcional)">
-              <TextInput value={codigoCie} onChange={(e) => setCodigoCie(e.target.value)} style={{ maxWidth: 200 }} />
-            </FormField>
+
+          <form onSubmit={guardarDiagnostico} className="flex flex-col gap-6">
+            <div>
+              <SeccionTitulo n={1}>Información general</SeccionTitulo>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <FormField label="Fecha del diagnóstico"><TextInput type="date" value={datos.fecha} onChange={(e) => setCampoDatos("fecha", e.target.value)} /></FormField>
+                <FormField label="Hora"><TextInput type="time" value={datos.hora} onChange={(e) => setCampoDatos("hora", e.target.value)} /></FormField>
+                <FormField label="Especialidad"><TextInput value={datos.especialidad} onChange={(e) => setCampoDatos("especialidad", e.target.value)} /></FormField>
+                <FormField label="Tipo de atención">
+                  <Select value={tipoAtencion} onChange={(e) => handleTipoAtencionChange(e.target.value)}>
+                    <option value="">Seleccionar…</option>
+                    {TIPOS_ATENCION.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </Select>
+                </FormField>
+                <FormField label="Servicio"><TextInput value={servicio} onChange={(e) => setServicio(e.target.value)} /></FormField>
+                {requiereSalaCama && (
+                  <FormField label="Sala / Cama"><TextInput value={salaCama} onChange={(e) => setSalaCama(e.target.value)} /></FormField>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <SeccionTitulo n={2}>Motivo de consulta</SeccionTitulo>
+              <TextInput value={datos.motivoConsulta} onChange={(e) => setCampoDatos("motivoConsulta", e.target.value)} placeholder='ej. "Dolor abdominal de 18 horas de evolución"' />
+            </div>
+
+            <div>
+              <SeccionTitulo n={3}>Historia de la enfermedad actual</SeccionTitulo>
+              <TextArea rows={3} value={datos.historiaEnfermedad} onChange={(e) => setCampoDatos("historiaEnfermedad", e.target.value)} placeholder="Inicio, evolución, localización, intensidad, síntomas asociados, factores que agravan o alivian, tratamientos previos…" />
+            </div>
+
+            <div>
+              <SeccionTitulo n={4}>Signos y síntomas relevantes</SeccionTitulo>
+              <div className="flex flex-wrap gap-x-5 gap-y-2 mb-3">
+                {SIGNOS_SINTOMAS.map((s) => (
+                  <label key={s} className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                    <input type="checkbox" checked={datos.signosSintomas.includes(s)} onChange={() => toggleSintoma(s)} />
+                    {s}
+                  </label>
+                ))}
+              </div>
+              <TextInput placeholder="Otros…" value={datos.signosSintomasOtros} onChange={(e) => setCampoDatos("signosSintomasOtros", e.target.value)} style={{ maxWidth: 320 }} />
+            </div>
+
+            <div>
+              <SeccionTitulo n={5}>Signos vitales</SeccionTitulo>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+                <FormField label="Presión arterial"><TextInput placeholder="120/80" value={datos.signosVitales.pa} onChange={(e) => setCampoVital("pa", e.target.value)} /></FormField>
+                <FormField label="FC (lpm)"><TextInput type="number" value={datos.signosVitales.fc} onChange={(e) => setCampoVital("fc", e.target.value)} /></FormField>
+                <FormField label="FR (rpm)"><TextInput type="number" value={datos.signosVitales.fr} onChange={(e) => setCampoVital("fr", e.target.value)} /></FormField>
+                <FormField label="Temp (°C)"><TextInput type="number" step="0.1" value={datos.signosVitales.temp} onChange={(e) => setCampoVital("temp", e.target.value)} /></FormField>
+                <FormField label="SpO₂ (%)"><TextInput type="number" value={datos.signosVitales.spo2} onChange={(e) => setCampoVital("spo2", e.target.value)} /></FormField>
+                <FormField label="Peso (kg)"><TextInput type="number" step="0.1" value={datos.signosVitales.peso} onChange={(e) => setCampoVital("peso", e.target.value)} /></FormField>
+                <FormField label="Talla (m)"><TextInput type="number" step="0.01" value={datos.signosVitales.talla} onChange={(e) => setCampoVital("talla", e.target.value)} /></FormField>
+                <FormField label="IMC"><TextInput disabled value={imc || ""} placeholder="—" /></FormField>
+              </div>
+            </div>
+
+            <div>
+              <SeccionTitulo n={6}>Exploración física</SeccionTitulo>
+              <div className="flex gap-4">
+                <div className="flex flex-col gap-1 shrink-0" style={{ width: 160 }}>
+                  {SISTEMAS_EXPLORACION.map((s) => (
+                    <button
+                      type="button"
+                      key={s.key}
+                      onClick={() => setSistemaActivo(s.key)}
+                      className="text-left text-sm px-3 py-2 rounded-lg transition-colors"
+                      style={sistemaActivo === s.key ? { backgroundColor: COLORS.navy, color: "white", fontWeight: 600 } : { color: COLORS.text }}
+                    >
+                      {s.label}
+                      {datos.exploracionFisica[s.key] && sistemaActivo !== s.key && <span style={{ color: COLORS.gold }}> ●</span>}
+                    </button>
+                  ))}
+                </div>
+                <TextArea
+                  rows={6}
+                  className="flex-1"
+                  value={datos.exploracionFisica[sistemaActivo]}
+                  onChange={(e) => setCampoExploracion(e.target.value)}
+                  placeholder={`Hallazgos de ${SISTEMAS_EXPLORACION.find((s) => s.key === sistemaActivo)?.label.toLowerCase()}…`}
+                />
+              </div>
+            </div>
+
+            <div>
+              <SeccionTitulo n={7}>Estudios y resultados</SeccionTitulo>
+              {datos.estudios.length > 0 && (
+                <div className="flex flex-col gap-4 mb-3">
+                  {datos.estudios.map((e, i) => (
+                    <div key={i} className="rounded-xl p-3" style={{ border: `1px solid ${COLORS.border}` }}>
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_150px_2fr_auto] gap-3 items-end mb-2">
+                        <FormField label="Tipo de estudio"><TextInput value={e.tipo} onChange={(ev) => actualizarEstudio(i, "tipo", ev.target.value)} placeholder="ej. Biometría hemática" /></FormField>
+                        <FormField label="Fecha"><TextInput type="date" value={e.fecha} onChange={(ev) => actualizarEstudio(i, "fecha", ev.target.value)} /></FormField>
+                        <FormField label="Resultado / hallazgos"><TextInput value={e.resultado} onChange={(ev) => actualizarEstudio(i, "resultado", ev.target.value)} /></FormField>
+                        <button type="button" onClick={() => quitarEstudio(i)} className="text-gray-400 hover:text-red-500 mb-2.5" aria-label="Quitar estudio"><Trash2 size={16} /></button>
+                      </div>
+                      <FormField label="Adjuntar archivo (PDF/imagen, máx. 5MB — opcional)">
+                        <input
+                          type="file"
+                          accept=".pdf,image/*"
+                          onChange={(ev) => setArchivoEstudio(i, ev.target.files[0] || null)}
+                          className="text-sm mt-1.5"
+                        />
+                      </FormField>
+                      {e.archivoNombre && !archivosEstudios[i] && (
+                        <p className="text-xs mt-1" style={{ color: "#888" }}>Ya tiene adjunto: {e.archivoNombre} (seleccione otro archivo para reemplazarlo)</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button type="button" variant="secondary" onClick={agregarEstudio}>
+                <span className="flex items-center gap-1.5"><Plus size={14} /> Agregar estudio</span>
+              </Button>
+            </div>
+
+            <div>
+              <SeccionTitulo n={8}>Diagnóstico principal</SeccionTitulo>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+                  <FormField label="Diagnóstico"><TextInput required value={datos.diagnosticoPrincipal.diagnostico} onChange={(e) => setCampoPrincipal("diagnostico", e.target.value)} /></FormField>
+                </div>
+                <FormField label="Código CIE-10"><Cie10Input value={datos.diagnosticoPrincipal.codigoCie} onChange={(v) => setCampoPrincipal("codigoCie", v)} /></FormField>
+                <FormField label="Tipo">
+                  <Select value={datos.diagnosticoPrincipal.tipo} onChange={(e) => setCampoPrincipal("tipo", e.target.value)}>
+                    {TIPOS_DIAGNOSTICO.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </Select>
+                </FormField>
+                <FormField label="Prioridad">
+                  <Select value={datos.diagnosticoPrincipal.prioridad} onChange={(e) => setCampoPrincipal("prioridad", e.target.value)}>
+                    {PRIORIDADES_DIAGNOSTICO.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </Select>
+                </FormField>
+                <FormField label="Estado">
+                  <Select value={datos.diagnosticoPrincipal.estado} onChange={(e) => setCampoPrincipal("estado", e.target.value)}>
+                    {ESTADOS_DIAGNOSTICO.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </FormField>
+                <FormField label="Fecha"><TextInput type="date" value={datos.diagnosticoPrincipal.fecha} onChange={(e) => setCampoPrincipal("fecha", e.target.value)} /></FormField>
+              </div>
+
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "#888" }}>Diagnósticos secundarios (opcionales)</div>
+              {datos.diagnosticosSecundarios.length > 0 && (
+                <div className="flex flex-col gap-3 mb-3">
+                  {datos.diagnosticosSecundarios.map((s, i) => (
+                    <div key={i} className="grid grid-cols-1 sm:grid-cols-[2fr_150px_150px_auto] gap-3 items-end">
+                      <FormField label="Diagnóstico"><TextInput value={s.diagnostico} onChange={(ev) => actualizarSecundario(i, "diagnostico", ev.target.value)} /></FormField>
+                      <FormField label="Código CIE-10"><Cie10Input value={s.codigoCie} onChange={(v) => actualizarSecundario(i, "codigoCie", v)} /></FormField>
+                      <FormField label="Estado">
+                        <Select value={s.estado} onChange={(ev) => actualizarSecundario(i, "estado", ev.target.value)}>
+                          {ESTADOS_DIAGNOSTICO.map((e) => <option key={e} value={e}>{e}</option>)}
+                        </Select>
+                      </FormField>
+                      <button type="button" onClick={() => quitarSecundario(i)} className="text-gray-400 hover:text-red-500 mb-2.5" aria-label="Quitar diagnóstico"><Trash2 size={16} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button type="button" variant="secondary" onClick={agregarSecundario}>
+                <span className="flex items-center gap-1.5"><Plus size={14} /> Agregar diagnóstico</span>
+              </Button>
+            </div>
+
+            <div>
+              <SeccionTitulo n={9}>Impresión clínica</SeccionTitulo>
+              <TextArea rows={3} value={datos.impresionClinica} onChange={(e) => setCampoDatos("impresionClinica", e.target.value)} placeholder="Cómo se llegó al diagnóstico…" />
+            </div>
+
+            <div>
+              <SeccionTitulo n={10}>Plan y conducta</SeccionTitulo>
+              <TextArea rows={4} value={datos.planConducta} onChange={(e) => setCampoDatos("planConducta", e.target.value)} placeholder="Tratamiento indicado, medicamentos, procedimientos, referencia a especialista, hospitalización, cirugía, estudios adicionales, seguimiento…" />
+            </div>
+
             <div>
               <Button type="submit" disabled={guardando}>{guardando ? "Guardando…" : "Guardar diagnóstico"}</Button>
             </div>

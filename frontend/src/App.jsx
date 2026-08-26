@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React from "react";
+import { Routes, Route, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
@@ -12,29 +13,40 @@ import { BitacoraPage } from "./pages/BitacoraPage";
 import { SeguridadPage } from "./pages/SeguridadPage";
 import { ReportesPage } from "./pages/ReportesPage";
 
+// Estas tres paginas reciben un paciente preseleccionado (ej. desde "Ver
+// expediente" en Registro) via ?pacienteId= en la URL, en vez de estado en
+// memoria — asi el enlace es compartible/recargable.
+function ConPacienteDeUrl({ Page }) {
+  const [params] = useSearchParams();
+  const pacienteId = params.get("pacienteId");
+  return <Page pacienteIdInicial={pacienteId ? Number(pacienteId) : null} />;
+}
+
 export default function App() {
   const { usuario, logout } = useAuth();
-  const [page, setPage] = useState("registro");
-  const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);
+  const navigate = useNavigate();
 
   if (!usuario) return <LoginPage />;
 
   function irAExpediente(pacienteId) {
-    setPacienteSeleccionado(pacienteId);
-    setPage("expediente");
+    navigate(`/expediente?pacienteId=${pacienteId}`);
   }
 
   return (
-    <Layout usuario={usuario} page={page} setPage={setPage} onLogout={logout}>
-      {page === "registro" && <RegistroPage onVerExpediente={irAExpediente} />}
-      {page === "expediente" && <ExpedientePage pacienteIdInicial={pacienteSeleccionado} />}
-      {page === "tratamiento" && <TratamientoPage pacienteIdInicial={pacienteSeleccionado} />}
-      {page === "referidos" && <ReferidosPage />}
-      {page === "financiera" && <FinancieraPage />}
-      {page === "farmacia" && <FarmaciaPage />}
-      {page === "bitacora" && <BitacoraPage pacienteIdInicial={pacienteSeleccionado} />}
-      {page === "seguridad" && <SeguridadPage />}
-      {page === "reportes" && <ReportesPage />}
+    <Layout usuario={usuario} onLogout={logout}>
+      <Routes>
+        <Route path="/" element={<Navigate to="/registro" replace />} />
+        <Route path="/registro" element={<RegistroPage onVerExpediente={irAExpediente} />} />
+        <Route path="/expediente" element={<ConPacienteDeUrl Page={ExpedientePage} />} />
+        <Route path="/tratamiento" element={<ConPacienteDeUrl Page={TratamientoPage} />} />
+        <Route path="/referidos" element={<ReferidosPage />} />
+        <Route path="/financiera" element={<FinancieraPage />} />
+        <Route path="/farmacia" element={<FarmaciaPage />} />
+        <Route path="/bitacora" element={<ConPacienteDeUrl Page={BitacoraPage} />} />
+        <Route path="/seguridad" element={<SeguridadPage />} />
+        <Route path="/reportes" element={<ReportesPage />} />
+        <Route path="*" element={<Navigate to="/registro" replace />} />
+      </Routes>
     </Layout>
   );
 }

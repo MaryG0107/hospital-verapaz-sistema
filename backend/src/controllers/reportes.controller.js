@@ -1,6 +1,7 @@
 // Controlador: Reportes administrativos y financieros (Modulo 9, RF-31)
 import { prisma } from "../config/prisma.js";
 import { reporteConsolidado } from "../services/facturacion.service.js";
+import { leerPaginacion } from "../utils/paginacion.util.js";
 
 function rangoFecha(desde, hasta) {
   const rango = {};
@@ -48,14 +49,60 @@ export async function facturacionPorFormaPago(req, res) {
   res.json(grupos.map((g) => ({ formaPago: g.formaPago, total: Number(g._sum.total || 0), cantidad: g._count._all })));
 }
 
+// Ingresos de hospital y farmacia agrupados por mes, para el dashboard de
+// tendencia del modulo de Reportes (grafica de lineas/barras en el frontend).
+export async function ingresosPorMes(req, res) {
+  const { desde, hasta } = req.query;
+  const where = { creadoEn: rangoFecha(desde, hasta) };
+  const [facturasHospital, facturasFarmacia] = await Promise.all([
+    prisma.facturaHospital.findMany({ where, select: { total: true, creadoEn: true } }),
+    prisma.facturaFarmacia.findMany({ where, select: { montoTotal: true, creadoEn: true } }),
+  ]);
+
+  function clave(fecha) {
+    const d = new Date(fecha);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  const meses = {};
+  function bucket(mes) {
+    if (!meses[mes]) meses[mes] = { mes, ingresosHospital: 0, ingresosFarmacia: 0 };
+    return meses[mes];
+  }
+  facturasHospital.forEach((f) => { bucket(clave(f.creadoEn)).ingresosHospital += Number(f.total); });
+  facturasFarmacia.forEach((f) => { bucket(clave(f.creadoEn)).ingresosFarmacia += Number(f.montoTotal); });
+
+  const resultado = Object.values(meses)
+    .map((m) => ({
+      mes: m.mes,
+      ingresosHospital: Number(m.ingresosHospital.toFixed(2)),
+      ingresosFarmacia: Number(m.ingresosFarmacia.toFixed(2)),
+      total: Number((m.ingresosHospital + m.ingresosFarmacia).toFixed(2)),
+    }))
+    .sort((a, b) => a.mes.localeCompare(b.mes));
+
+  res.json(resultado);
+}
+
 // RNF-10: kardex de movimientos de inventario de farmacia
 export async function inventarioKardex(req, res) {
   const { medicamentoId, desde, hasta } = req.query;
+  const where = {
+    medicamentoId: medicamentoId ? Number(medicamentoId) : undefined,
+    fecha: rangoFecha(desde, hasta),
+  };
+
+  if (req.query.page) {
+    const { page, pageSize, skip, take } = leerPaginacion(req);
+    const [items, total] = await Promise.all([
+      prisma.movimientoInventario.findMany({ where, orderBy: { fecha: "desc" }, skip, take, include: { medicamento: { select: { nombre: true } } } }),
+      prisma.movimientoInventario.count({ where }),
+    ]);
+    return res.json({ items, total, page, pageSize });
+  }
+
   const movimientos = await prisma.movimientoInventario.findMany({
-    where: {
-      medicamentoId: medicamentoId ? Number(medicamentoId) : undefined,
-      fecha: rangoFecha(desde, hasta),
-    },
+    where,
     orderBy: { fecha: "desc" },
     take: 200,
     include: { medicamento: { select: { nombre: true } } },
@@ -68,26 +115,35 @@ export async function inventarioKardex(req, res) {
 // para no tener que revisar registro por registro si hay mucho volumen.
 export async function auditoriaDiagnostico(req, res) {
   const { pacienteId, desde, hasta, buscar } = req.query;
+  const where = {
+    pacienteId: pacienteId ? Number(pacienteId) : undefined,
+    fecha: rangoFecha(desde, hasta),
+    ...(buscar
+      ? {
+          OR: [
+            { usuario: { nombre: { contains: buscar, mode: "insensitive" } } },
+            { paciente: { nombreCompleto: { contains: buscar, mode: "insensitive" } } },
+            { paciente: { historiaClinica: { contains: buscar, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
+  };
+  const include = {
+    usuario: { select: { nombre: true, roles: true } },
+    paciente: { select: { nombreCompleto: true, historiaClinica: true } },
+  };
+
+  if (req.query.page) {
+    const { page, pageSize, skip, take } = leerPaginacion(req);
+    const [items, total] = await Promise.all([
+      prisma.accesoDiagnostico.findMany({ where, orderBy: { fecha: "desc" }, skip, take, include }),
+      prisma.accesoDiagnostico.count({ where }),
+    ]);
+    return res.json({ items, total, page, pageSize });
+  }
+
   const accesos = await prisma.accesoDiagnostico.findMany({
-    where: {
-      pacienteId: pacienteId ? Number(pacienteId) : undefined,
-      fecha: rangoFecha(desde, hasta),
-      ...(buscar
-        ? {
-            OR: [
-              { usuario: { nombre: { contains: buscar, mode: "insensitive" } } },
-              { paciente: { nombreCompleto: { contains: buscar, mode: "insensitive" } } },
-              { paciente: { historiaClinica: { contains: buscar, mode: "insensitive" } } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: { fecha: "desc" },
-    take: 200,
-    include: {
-      usuario: { select: { nombre: true, rol: true } },
-      paciente: { select: { nombreCompleto: true, historiaClinica: true } },
-    },
+    where, orderBy: { fecha: "desc" }, take: 200, include,
   });
   res.json(accesos);
 }

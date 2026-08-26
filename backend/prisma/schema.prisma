@@ -11,13 +11,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Catalogo de codigos CIE-10 de uso frecuente (no el catalogo oficial
+// completo de la OMS, sino un subconjunto curado para agilizar la captura
+// con autocompletado en Diagnostico e Ingreso/Egreso).
+model CatalogoCie10 {
+  id          Int    @id @default(autoincrement())
+  codigo      String @unique
+  descripcion String
+
+  @@index([descripcion])
+}
+
 // Modulo 8: Seguridad y Roles
 model Usuario {
   id                    Int      @id @default(autoincrement())
   nombre                String
   correo                String   @unique
   passwordHash          String
-  rol                   String   // Administrador, Recepcion, Consulta, Enfermeria, Facturacion, Farmacia
+  roles                 String[] @default([]) // uno o mas de: Administrador, Recepcion, Consulta, Enfermeria, Facturacion, Farmacia (RF-30)
   puedeAutogenerarToken Boolean  @default(false) // RF-34
   ultimaActividad       DateTime? // se actualiza en cada peticion autenticada, para saber quien esta "en linea"
   creadoEn              DateTime @default(now())
@@ -30,8 +41,6 @@ model Usuario {
   facturasFarmacia FacturaFarmacia[] @relation("FacturaFarmaciaRegistradoPor")
   accesosDiagnostico AccesoDiagnostico[] @relation("AccesoDiagnosticoUsuario")
   logs             LogActividad[]  @relation("LogActividadUsuario")
-
-  @@index([rol])
 }
 
 // Bitacora general del sistema: login/logout y cada accion de crear o
@@ -83,6 +92,7 @@ model Paciente {
   telefono           String?
   edad               Int?
   sexo               String?
+  tipoSangre         String? // A+, A-, B+, B-, AB+, AB-, O+, O-
   estadoCivil        String?
   ocupacion          String?
   religion           String?
@@ -143,15 +153,36 @@ model RegistroMaternidad {
 model Diagnostico {
   id             Int      @id @default(autoincrement())
   pacienteId     Int
-  textoCifrado   String   // RF-10: contenido cifrado (AES-256-GCM)
+  textoCifrado   String   // RF-10: contenido cifrado (AES-256-GCM) — JSON con la plantilla estructurada
   iv             String
   authTag        String
   codigoCie      String?
+  tipoAtencion   String?  // consulta_externa | emergencia | hospitalizacion | seguimiento
+  servicio       String?
+  salaCama       String?
   registradoPor  Int
   creadoEn       DateTime @default(now())
 
   paciente  Paciente @relation(fields: [pacienteId], references: [id])
   registrador Usuario @relation("DiagnosticoRegistradoPor", fields: [registradoPor], references: [id])
+
+  @@index([pacienteId])
+}
+
+// Archivo adjunto a un estudio dentro de "Estudios y resultados" del
+// diagnostico (ver ExpedientePage). Se referencia por id desde el JSON
+// cifrado (datos.estudios[i].archivoId) — el archivo en si vive en disco
+// (backend/uploads/diagnosticos), esta fila solo guarda el nombre y el
+// dueño (pacienteId) para poder validar el acceso con el mismo token
+// temporal que protege el diagnostico (RF-11).
+model DiagnosticoArchivo {
+  id             Int      @id @default(autoincrement())
+  pacienteId     Int
+  nombreOriginal String
+  nombreArchivo  String   // nombre generado en disco
+  mimeType       String
+  tamano         Int
+  creadoEn       DateTime @default(now())
 
   @@index([pacienteId])
 }
@@ -186,6 +217,12 @@ model TratamientoItem {
   dosis        String?
   costo        Decimal  @db.Decimal(10, 2)
   origen       String   // "intrahospitalario" (insumo/procedimiento) | "farmacia" (medicamento de farmacia usado en el paciente)
+  // RF-13: personal medico de un procedimiento quirurgico. Opcionales porque
+  // no todo TratamientoItem es una cirugia (ej. una sonda o un medicamento).
+  cirujano       String?
+  ayudante       String?
+  instrumentista String?
+  anestesiologo  String?
   // RF-15: ambos origenes se cargan al costeo del paciente (FacturaHospital);
   // solo una venta directa de farmacia (VentaFarmacia) se factura aparte.
   facturado    Boolean  @default(false) // evita doble cobro al facturar (RNF-13)

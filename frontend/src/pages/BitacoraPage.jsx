@@ -1,27 +1,31 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
 import { Banner } from "../components/Banner";
-import { FormField, Select, TextArea } from "../components/FormField";
+import { FormField, TextArea } from "../components/FormField";
+import { PacienteBuscador } from "../components/PacienteBuscador";
 import { useFetch } from "../hooks/useFetch";
+import { usePaginatedFetch } from "../hooks/usePaginatedFetch";
+import { Pagination } from "../components/Pagination";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
-import { ROLES } from "../utils/roles";
+import { ROLES, tieneRol, etiquetasRoles } from "../utils/roles";
 
 export function BitacoraPage({ pacienteIdInicial }) {
   const { usuario } = useAuth();
-  const puedeRegistrar = [ROLES.ENFERMERIA, ROLES.RECEPCION, ROLES.ADMIN].includes(usuario.rol);
+  const puedeRegistrar = tieneRol(usuario, ROLES.ENFERMERIA, ROLES.RECEPCION, ROLES.ADMIN);
 
-  const { data: pacientes } = useFetch("/pacientes");
   const [pacienteId, setPacienteId] = useState(pacienteIdInicial || null);
+  // Un solo paciente por id (no una lista completa): con volumen alto de
+  // pacientes, cargar todos de una vez para un <select> deja de ser viable.
+  const { data: patient } = useFetch(pacienteId ? `/pacientes/${pacienteId}` : null, { enabled: !!pacienteId });
 
-  useEffect(() => {
-    if (!pacienteId && pacientes?.length) setPacienteId(pacientes[0].id);
-  }, [pacientes, pacienteId]);
-
-  const { data: visitas, loading, error, reload } = useFetch(pacienteId ? `/bitacora?pacienteId=${pacienteId}` : null, { enabled: !!pacienteId });
+  const {
+    items: visitas, loading, error, reload,
+    page, setPage, totalPages, total,
+  } = usePaginatedFetch(pacienteId ? `/bitacora?pacienteId=${pacienteId}` : null, { pageSize: 20, enabled: !!pacienteId });
 
   const [descripcion, setDescripcion] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -47,36 +51,37 @@ export function BitacoraPage({ pacienteIdInicial }) {
     <div>
       <PageHeader title="Bitácora de Visitas" subtitle="Registro de cada visita/consulta: qué se hizo y quién lo hizo (RF-28)" />
       <div className="mb-4">
-        <Select value={pacienteId || ""} onChange={(e) => setPacienteId(Number(e.target.value))} style={{ maxWidth: 360 }}>
-          {(pacientes || []).map((p) => (
-            <option key={p.id} value={p.id}>{p.nombreCompleto} — {p.historiaClinica}</option>
-          ))}
-        </Select>
+        <PacienteBuscador pacienteSeleccionado={patient} onSelect={(p) => setPacienteId(p?.id || null)} mostrarListado />
       </div>
 
       {error && <Banner tone="error">{error}</Banner>}
-      <Card>
-        {loading ? (
-          <div className="text-sm" style={{ color: "#888" }}>Cargando…</div>
-        ) : !visitas?.length ? (
-          <div className="text-sm" style={{ color: "#888" }}>Sin visitas registradas para este paciente.</div>
-        ) : (
-          visitas.map((v, i) => (
-            <div key={v.id} className="flex flex-col sm:flex-row gap-1 sm:gap-4 py-3" style={i > 0 ? { borderTop: `1px solid ${COLORS.border}` } : {}}>
-              <div className="flex items-center gap-2 sm:contents">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS.gold }} />
-                <div style={{ color: "#888" }} className="text-xs font-semibold sm:w-44 sm:shrink-0">{new Date(v.fecha).toLocaleString()}</div>
-              </div>
-              <div className="pl-5 sm:pl-0">
-                <div className="text-sm font-semibold">{v.autor?.nombre} — {v.autor?.rol}</div>
-                <div className="text-xs mt-0.5" style={{ color: "#888" }}>{v.descripcion}</div>
-              </div>
-            </div>
-          ))
-        )}
-      </Card>
+      {pacienteId && (
+        <>
+          <Card>
+            {loading ? (
+              <div className="text-sm" style={{ color: "#888" }}>Cargando…</div>
+            ) : !visitas?.length ? (
+              <div className="text-sm" style={{ color: "#888" }}>Sin visitas registradas para este paciente.</div>
+            ) : (
+              visitas.map((v, i) => (
+                <div key={v.id} className="flex flex-col sm:flex-row gap-1 sm:gap-4 py-3" style={i > 0 ? { borderTop: `1px solid ${COLORS.border}` } : {}}>
+                  <div className="flex items-center gap-2 sm:contents">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS.gold }} />
+                    <div style={{ color: "#888" }} className="text-xs font-semibold sm:w-44 sm:shrink-0">{new Date(v.fecha).toLocaleString()}</div>
+                  </div>
+                  <div className="pl-5 sm:pl-0">
+                    <div className="text-sm font-semibold">{v.autor?.nombre} — {etiquetasRoles(v.autor?.roles)}</div>
+                    <div className="text-xs mt-0.5" style={{ color: "#888" }}>{v.descripcion}</div>
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
+          <Pagination page={page} totalPages={totalPages} total={total} onChange={setPage} />
+        </>
+      )}
 
-      {puedeRegistrar && (
+      {pacienteId && puedeRegistrar && (
         <Card style={{ marginTop: 16 }}>
           <div className="font-semibold text-sm mb-3">+ Registrar visita</div>
           {mensaje && <Banner tone={mensaje.tone}>{mensaje.texto}</Banner>}

@@ -3,10 +3,14 @@ const BASE_URL = "/api";
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("token");
+  // Si el body ya es FormData (subida de archivos), no se fuerza JSON: el
+  // navegador pone el Content-Type con el boundary correcto solo si lo dejamos
+  // sin especificar aqui.
+  const esFormData = options.body instanceof FormData;
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(esFormData ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
@@ -27,6 +31,6 @@ async function request(path, options = {}) {
 
 export const api = {
   get: (path, options) => request(path, options),
-  post: (path, body, options) => request(path, { ...options, method: "POST", body: JSON.stringify(body) }),
+  post: (path, body, options) => request(path, { ...options, method: "POST", body: body instanceof FormData ? body : JSON.stringify(body) }),
   put: (path, body, options) => request(path, { ...options, method: "PUT", body: JSON.stringify(body) }),
 };

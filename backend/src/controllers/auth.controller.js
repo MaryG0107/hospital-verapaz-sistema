@@ -8,7 +8,7 @@ import { registrarActividad } from "../services/actividad.service.js";
 
 function firmarSesion(usuario) {
   return jwt.sign(
-    { id: usuario.id, nombre: usuario.nombre, rol: usuario.rol },
+    { id: usuario.id, nombre: usuario.nombre, roles: usuario.roles },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "8h" }
   );
@@ -36,7 +36,7 @@ export async function login(req, res) {
       id: usuario.id,
       nombre: usuario.nombre,
       correo: usuario.correo,
-      rol: usuario.rol,
+      roles: usuario.roles,
       puedeAutogenerarToken: usuario.puedeAutogenerarToken,
     },
   });
@@ -83,7 +83,7 @@ export async function autogenerarTokenTemporal(req, res) {
   const { pacienteId } = req.body;
 
   const usuario = await prisma.usuario.findUnique({ where: { id: req.user.id } });
-  if (!usuario?.puedeAutogenerarToken && usuario?.rol !== ROLES.ADMIN) {
+  if (!usuario?.puedeAutogenerarToken && !usuario?.roles?.includes(ROLES.ADMIN)) {
     return res.status(403).json({ error: "No tiene permiso para autogenerar tokens. Solicítelo al Administrador" });
   }
 

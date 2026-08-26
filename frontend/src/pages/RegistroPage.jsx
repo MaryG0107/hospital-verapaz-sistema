@@ -1,16 +1,24 @@
 import React, { useEffect, useState } from "react";
+import { Printer } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
 import { Table } from "../components/Table";
 import { Button } from "../components/Button";
 import { Banner } from "../components/Banner";
-import { FormField, TextInput, Select } from "../components/FormField";
+import { Modal } from "../components/Modal";
+import { FichaPacienteImprimible } from "../components/FichaPacienteImprimible";
+import { PacienteBuscador } from "../components/PacienteBuscador";
+import { FormField, TextInput, Select, TextArea } from "../components/FormField";
 import { Combobox } from "../components/Combobox";
 import { useFetch } from "../hooks/useFetch";
+import { usePaginatedFetch } from "../hooks/usePaginatedFetch";
+import { Pagination } from "../components/Pagination";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { ROLES } from "../utils/roles";
+import { ROLES, tieneRol } from "../utils/roles";
 import { DEPARTAMENTOS_GUATEMALA, ESTADOS_CIVILES, NACIONALIDADES } from "../utils/guatemala";
+import { CONDICIONES_EGRESO } from "../utils/condicionesEgreso";
+import { Cie10Input } from "../components/Cie10Input";
 import { formatearDPI, limpiarDPI, validarDPI } from "../utils/dpi";
 import { formatearTelefono, limpiarTelefono, telefonoIncompleto } from "../utils/telefono";
 import { COLORS } from "../styles/tokens";
@@ -21,20 +29,45 @@ const PARENTESCOS = ["Esposo/a", "Padre", "Madre", "Hijo/a", "Hermano/a", "Abuel
 
 const RELIGIONES = ["Católica", "Evangélica / Cristiana", "Testigo de Jehová", "Mormona (SUD)", "Espiritualidad Maya", "Ninguna / Atea"];
 
+const CAMPOS_INGRESO_VACIOS = {
+  tipoSangre: "",
+  fechaIngreso: "", serviciosSolicitados: "", referidoDe: "", medicoReferenteId: "", impresionClinicaIngreso: "",
+  fechaEgreso: "", diagnosticoEgresoCodigo: "", complicacionesCodigo: "", operacionesCodigo: "",
+  condicionEgreso: "", autopsia: "", causaMuerte: "",
+  matNumeroHijo: "", matFecha: "", matHora: "", matSexo: "", matCondicion: "",
+};
+
+// Los inputs datetime-local/date esperan "YYYY-MM-DDTHH:mm" / "YYYY-MM-DD" en
+// hora local; convertir con toISOString() a secas desplaza la hora por el
+// timezone offset, por eso se resta ese offset antes de recortar el string.
+function toDatetimeLocal(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+function toDateInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 const OPCIONES_LUGAR = DEPARTAMENTOS_GUATEMALA.flatMap((d) =>
   d.municipios.map((m) => ({ value: `${m}, ${d.departamento}`, label: m, group: d.departamento }))
 );
 
 const CAMPOS_VACIOS = {
   nombreCompleto: "", dpi: "", direccion: "", lugarNacimiento: "", fechaNacimiento: "",
-  telefono: "", edad: "", sexo: "", estadoCivil: "", ocupacion: "", religion: "",
+  telefono: "", edad: "", sexo: "", tipoSangre: "", estadoCivil: "", ocupacion: "", religion: "",
   nacionalidad: "", nombreConyuge: "", nombrePadre: "", nombreMadre: "",
   contactoEmergencia: "", telefonoEmergencia: "", parentesco: "",
+  referidoDe: "", medicoReferenteId: "",
 };
+
+const TIPOS_SANGRE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 export function RegistroPage({ onVerExpediente }) {
   const { usuario } = useAuth();
-  const puedeRegistrar = [ROLES.RECEPCION, ROLES.ADMIN].includes(usuario.rol);
+  const puedeRegistrar = tieneRol(usuario, ROLES.RECEPCION, ROLES.ADMIN);
 
   const [tab, setTab] = useState("nuevo");
   const [buscarInput, setBuscarInput] = useState("");
@@ -45,12 +78,108 @@ export function RegistroPage({ onVerExpediente }) {
     return () => clearTimeout(timeout);
   }, [buscarInput]);
 
-  const { data: pacientes, loading, error, reload } = useFetch(`/pacientes${buscar ? `?buscar=${encodeURIComponent(buscar)}` : ""}`);
+  const pacientesLista = usePaginatedFetch(
+    tab === "lista" ? `/pacientes${buscar ? `?buscar=${encodeURIComponent(buscar)}` : ""}` : null,
+    { pageSize: 20 }
+  );
+  const { data: medicosReferentes } = useFetch("/referidos");
+
+  const [ingresoPacienteId, setIngresoPacienteId] = useState(null);
+  const [mostrarFicha, setMostrarFicha] = useState(false);
+  const { data: pacienteDetalle, reload: reloadPacienteDetalle } = useFetch(
+    ingresoPacienteId ? `/pacientes/${ingresoPacienteId}` : null,
+    { enabled: !!ingresoPacienteId }
+  );
+  const [ingresoForm, setIngresoForm] = useState(CAMPOS_INGRESO_VACIOS);
+  const [guardandoIngreso, setGuardandoIngreso] = useState(false);
+  const [mensajeIngreso, setMensajeIngreso] = useState(null);
+
+  useEffect(() => {
+    if (!pacienteDetalle) return;
+    setIngresoForm({
+      tipoSangre: pacienteDetalle.tipoSangre || "",
+      fechaIngreso: toDatetimeLocal(pacienteDetalle.fechaIngreso),
+      serviciosSolicitados: pacienteDetalle.serviciosSolicitados || "",
+      referidoDe: pacienteDetalle.referidoDe || "",
+      medicoReferenteId: pacienteDetalle.medicoReferenteId || "",
+      impresionClinicaIngreso: pacienteDetalle.impresionClinicaIngreso || "",
+      fechaEgreso: toDatetimeLocal(pacienteDetalle.fechaEgreso),
+      diagnosticoEgresoCodigo: pacienteDetalle.diagnosticoEgresoCodigo || "",
+      complicacionesCodigo: pacienteDetalle.complicacionesCodigo || "",
+      operacionesCodigo: pacienteDetalle.operacionesCodigo || "",
+      condicionEgreso: pacienteDetalle.condicionEgreso || "",
+      autopsia: pacienteDetalle.autopsia == null ? "" : pacienteDetalle.autopsia ? "si" : "no",
+      causaMuerte: pacienteDetalle.causaMuerte || "",
+      matNumeroHijo: pacienteDetalle.maternidad?.numeroHijo ?? "",
+      matFecha: toDateInput(pacienteDetalle.maternidad?.fecha),
+      matHora: pacienteDetalle.maternidad?.hora || "",
+      matSexo: pacienteDetalle.maternidad?.sexo || "",
+      matCondicion: pacienteDetalle.maternidad?.condicionEgresoBebe || "",
+    });
+  }, [pacienteDetalle]);
+
+  function setCampoIngreso(campo, valor) {
+    setIngresoForm((f) => ({ ...f, [campo]: valor }));
+  }
+
+  const esFallecido = ingresoForm.condicionEgreso.startsWith("fallecido");
+
+  // Autopsia y causa de la muerte solo aplican si el paciente fallecio: si
+  // el usuario cambia la condicion de egreso a una con vida, se limpian
+  // para no dejar guardado un dato que ya no corresponde.
+  function handleCondicionEgresoChange(valor) {
+    setIngresoForm((f) => ({
+      ...f,
+      condicionEgreso: valor,
+      ...(valor.startsWith("fallecido") ? {} : { autopsia: "", causaMuerte: "" }),
+    }));
+  }
+
+  async function handleSubmitIngreso(e) {
+    e.preventDefault();
+    setGuardandoIngreso(true);
+    setMensajeIngreso(null);
+    const f = ingresoForm;
+    const payload = {
+      tipoSangre: f.tipoSangre || null,
+      fechaIngreso: f.fechaIngreso ? new Date(f.fechaIngreso).toISOString() : null,
+      serviciosSolicitados: f.serviciosSolicitados || null,
+      referidoDe: f.referidoDe || null,
+      medicoReferenteId: f.medicoReferenteId ? Number(f.medicoReferenteId) : null,
+      impresionClinicaIngreso: f.impresionClinicaIngreso || null,
+      fechaEgreso: f.fechaEgreso ? new Date(f.fechaEgreso).toISOString() : null,
+      diagnosticoEgresoCodigo: f.diagnosticoEgresoCodigo || null,
+      complicacionesCodigo: f.complicacionesCodigo || null,
+      operacionesCodigo: f.operacionesCodigo || null,
+      condicionEgreso: f.condicionEgreso || null,
+      autopsia: f.autopsia === "" ? null : f.autopsia === "si",
+      causaMuerte: f.causaMuerte || null,
+    };
+    if (f.matNumeroHijo || f.matFecha || f.matHora || f.matSexo || f.matCondicion) {
+      payload.maternidad = {
+        numeroHijo: f.matNumeroHijo ? Number(f.matNumeroHijo) : null,
+        fecha: f.matFecha ? new Date(f.matFecha).toISOString() : null,
+        hora: f.matHora || null,
+        sexo: f.matSexo || null,
+        condicionEgresoBebe: f.matCondicion || null,
+      };
+    }
+    try {
+      await api.put(`/pacientes/${ingresoPacienteId}`, payload);
+      setMensajeIngreso({ tone: "success", texto: "Datos de ingreso/egreso guardados correctamente." });
+      reloadPacienteDetalle();
+    } catch (err) {
+      setMensajeIngreso({ tone: "error", texto: err.message });
+    } finally {
+      setGuardandoIngreso(false);
+    }
+  }
 
   const [form, setForm] = useState(CAMPOS_VACIOS);
   const [lugarOtro, setLugarOtro] = useState(false);
   const [parentescoOtro, setParentescoOtro] = useState(false);
   const [religionOtro, setReligionOtro] = useState(false);
+  const [tieneReferido, setTieneReferido] = useState(false);
   const [nacionalidadOtro, setNacionalidadOtro] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
@@ -71,14 +200,20 @@ export function RegistroPage({ onVerExpediente }) {
     setGuardando(true);
     setMensaje(null);
     try {
-      const paciente = await api.post("/pacientes", { ...form, edad: form.edad ? Number(form.edad) : undefined });
+      const paciente = await api.post("/pacientes", {
+        ...form,
+        edad: form.edad ? Number(form.edad) : undefined,
+        fechaNacimiento: form.fechaNacimiento || undefined,
+        medicoReferenteId: form.medicoReferenteId ? Number(form.medicoReferenteId) : undefined,
+      });
       setMensaje({ tone: "success", texto: `Paciente registrado con historia clínica ${paciente.historiaClinica}` });
       setForm(CAMPOS_VACIOS);
       setLugarOtro(false);
       setParentescoOtro(false);
       setReligionOtro(false);
       setNacionalidadOtro(false);
-      reload();
+      setTieneReferido(false);
+      pacientesLista.reload();
     } catch (err) {
       setMensaje({ tone: "error", texto: err.message });
     } finally {
@@ -97,6 +232,15 @@ export function RegistroPage({ onVerExpediente }) {
             style={tab === "nuevo" ? { backgroundColor: COLORS.navy, color: "white" } : { border: `1px solid ${COLORS.border}`, backgroundColor: "white", color: COLORS.text }}
           >
             + Paciente nuevo
+          </button>
+        )}
+        {puedeRegistrar && (
+          <button
+            onClick={() => setTab("ingreso")}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+            style={tab === "ingreso" ? { backgroundColor: COLORS.navy, color: "white" } : { border: `1px solid ${COLORS.border}`, backgroundColor: "white", color: COLORS.text }}
+          >
+            Ingreso / Egreso
           </button>
         )}
         <button
@@ -174,6 +318,12 @@ export function RegistroPage({ onVerExpediente }) {
                 <option value="">Seleccionar…</option>
                 <option value="Femenino">Femenino</option>
                 <option value="Masculino">Masculino</option>
+              </Select>
+            </FormField>
+            <FormField label="Tipo de sangre">
+              <Select value={form.tipoSangre} onChange={(e) => setCampo("tipoSangre", e.target.value)}>
+                <option value="">Seleccionar…</option>
+                {TIPOS_SANGRE.map((t) => <option key={t} value={t}>{t}</option>)}
               </Select>
             </FormField>
             <FormField label="Estado civil">
@@ -276,10 +426,168 @@ export function RegistroPage({ onVerExpediente }) {
                 </Select>
               )}
             </FormField>
+            <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+              <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={tieneReferido}
+                  onChange={(e) => {
+                    setTieneReferido(e.target.checked);
+                    if (!e.target.checked) { setCampo("medicoReferenteId", ""); setCampo("referidoDe", ""); }
+                  }}
+                />
+                El paciente llega referido por un médico o institución externa (RF-16)
+              </label>
+            </div>
+            {tieneReferido && (
+              <>
+                <FormField label="Médico referente (si está registrado en Clientes Referidos)">
+                  <Select value={form.medicoReferenteId} onChange={(e) => setCampo("medicoReferenteId", e.target.value)}>
+                    <option value="">— No está en la lista —</option>
+                    {(medicosReferentes || []).map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                  </Select>
+                </FormField>
+                <FormField label="Institución / médico (si no está registrado)">
+                  <TextInput placeholder="Nombre del médico o institución" value={form.referidoDe} onChange={(e) => setCampo("referidoDe", e.target.value)} />
+                </FormField>
+              </>
+            )}
             <div className="col-span-1 sm:col-span-2 lg:col-span-3 mt-2">
               <Button type="submit" disabled={guardando}>{guardando ? "Guardando…" : "Guardar paciente"}</Button>
             </div>
           </form>
+        </Card>
+      ) : tab === "ingreso" && puedeRegistrar ? (
+        <Card>
+          <p className="text-xs font-semibold mb-4" style={{ color: "#888" }}>
+            Ficha de ingreso y egreso (RF-05 a RF-09) — se guarda sobre un paciente ya registrado.
+          </p>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <FormField label="Paciente">
+              <PacienteBuscador pacienteSeleccionado={pacienteDetalle} onSelect={(p) => setIngresoPacienteId(p?.id || null)} mostrarListado />
+            </FormField>
+            {ingresoPacienteId && pacienteDetalle && (
+              <Button variant="secondary" onClick={() => setMostrarFicha(true)}>
+                <span className="flex items-center gap-1.5"><Printer size={14} /> Imprimir ficha (RF-09)</span>
+              </Button>
+            )}
+          </div>
+
+          {ingresoPacienteId && (
+            <form onSubmit={handleSubmitIngreso} className="flex flex-col gap-6 mt-5">
+              {mensajeIngreso && <Banner tone={mensajeIngreso.tone}>{mensajeIngreso.texto}</Banner>}
+
+              <div>
+                <div className="font-semibold text-sm mb-3" style={{ color: COLORS.navy }}>Datos generales</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-2">
+                  <FormField label="Tipo de sangre">
+                    <Select value={ingresoForm.tipoSangre} onChange={(e) => setCampoIngreso("tipoSangre", e.target.value)}>
+                      <option value="">Seleccionar…</option>
+                      {TIPOS_SANGRE.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </Select>
+                    <p className="text-[11px] mt-1" style={{ color: "#999" }}>Se captura al registrar al paciente; aquí se puede completar o corregir.</p>
+                  </FormField>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold text-sm mb-3" style={{ color: COLORS.navy }}>Ingreso</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <FormField label="Fecha y hora de ingreso">
+                    <TextInput type="datetime-local" value={ingresoForm.fechaIngreso} onChange={(e) => setCampoIngreso("fechaIngreso", e.target.value)} />
+                  </FormField>
+                  <FormField label="Servicios solicitados">
+                    <TextInput value={ingresoForm.serviciosSolicitados} onChange={(e) => setCampoIngreso("serviciosSolicitados", e.target.value)} />
+                  </FormField>
+                  <FormField label="Referido de (institución / médico)">
+                    <TextInput value={ingresoForm.referidoDe} onChange={(e) => setCampoIngreso("referidoDe", e.target.value)} />
+                  </FormField>
+                  <FormField label="Referido por (médico registrado)">
+                    <Select value={ingresoForm.medicoReferenteId} onChange={(e) => setCampoIngreso("medicoReferenteId", e.target.value)}>
+                      <option value="">— Ninguno —</option>
+                      {(medicosReferentes || []).map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                    </Select>
+                  </FormField>
+                  <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+                    <FormField label="Impresión clínica de ingreso">
+                      <TextArea rows={2} value={ingresoForm.impresionClinicaIngreso} onChange={(e) => setCampoIngreso("impresionClinicaIngreso", e.target.value)} />
+                    </FormField>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold text-sm mb-3" style={{ color: COLORS.navy }}>Egreso</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <FormField label="Fecha y hora de egreso">
+                    <TextInput type="datetime-local" value={ingresoForm.fechaEgreso} onChange={(e) => setCampoIngreso("fechaEgreso", e.target.value)} />
+                  </FormField>
+                  <FormField label="Condición de egreso">
+                    <Select value={ingresoForm.condicionEgreso} onChange={(e) => handleCondicionEgresoChange(e.target.value)}>
+                      <option value="">Seleccionar…</option>
+                      {CONDICIONES_EGRESO.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </Select>
+                  </FormField>
+                  <FormField label="Diagnóstico de egreso (código CIE-10)">
+                    <Cie10Input value={ingresoForm.diagnosticoEgresoCodigo} onChange={(v) => setCampoIngreso("diagnosticoEgresoCodigo", v)} />
+                  </FormField>
+                  <FormField label="Complicaciones (código CIE-10)">
+                    <Cie10Input value={ingresoForm.complicacionesCodigo} onChange={(v) => setCampoIngreso("complicacionesCodigo", v)} />
+                  </FormField>
+                  <FormField label="Operaciones (código)">
+                    <TextInput value={ingresoForm.operacionesCodigo} onChange={(e) => setCampoIngreso("operacionesCodigo", e.target.value)} />
+                    <p className="text-[11px] mt-1" style={{ color: "#999" }}>Catálogo de procedimientos (CIE-9-MC), no incluido en el buscador CIE-10.</p>
+                  </FormField>
+                </div>
+
+                {esFallecido && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 pt-4 animate-fade-in" style={{ borderTop: `1px dashed ${COLORS.border}` }}>
+                    <FormField label="Autopsia">
+                      <Select value={ingresoForm.autopsia} onChange={(e) => setCampoIngreso("autopsia", e.target.value)}>
+                        <option value="">Seleccionar…</option>
+                        <option value="si">Sí</option>
+                        <option value="no">No</option>
+                      </Select>
+                    </FormField>
+                    <div className="col-span-1 sm:col-span-2">
+                      <FormField label="Causa de la muerte">
+                        <TextInput value={ingresoForm.causaMuerte} onChange={(e) => setCampoIngreso("causaMuerte", e.target.value)} />
+                      </FormField>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="font-semibold text-sm mb-3" style={{ color: COLORS.navy }}>Maternidad (si aplica)</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <FormField label="No. de hijo">
+                    <TextInput type="number" min="1" value={ingresoForm.matNumeroHijo} onChange={(e) => setCampoIngreso("matNumeroHijo", e.target.value)} />
+                  </FormField>
+                  <FormField label="Fecha de nacimiento">
+                    <TextInput type="date" value={ingresoForm.matFecha} onChange={(e) => setCampoIngreso("matFecha", e.target.value)} />
+                  </FormField>
+                  <FormField label="Hora">
+                    <TextInput placeholder="ej. 14:30" value={ingresoForm.matHora} onChange={(e) => setCampoIngreso("matHora", e.target.value)} />
+                  </FormField>
+                  <FormField label="Sexo">
+                    <Select value={ingresoForm.matSexo} onChange={(e) => setCampoIngreso("matSexo", e.target.value)}>
+                      <option value="">Seleccionar…</option>
+                      <option value="Femenino">Femenino</option>
+                      <option value="Masculino">Masculino</option>
+                    </Select>
+                  </FormField>
+                  <FormField label="Condición de egreso del bebé">
+                    <TextInput value={ingresoForm.matCondicion} onChange={(e) => setCampoIngreso("matCondicion", e.target.value)} />
+                  </FormField>
+                </div>
+              </div>
+
+              <div>
+                <Button type="submit" disabled={guardandoIngreso}>{guardandoIngreso ? "Guardando…" : "Guardar cambios"}</Button>
+              </div>
+            </form>
+          )}
         </Card>
       ) : tab === "lista" ? (
         <>
@@ -291,11 +599,11 @@ export function RegistroPage({ onVerExpediente }) {
               style={{ maxWidth: 360 }}
             />
           </div>
-          {error && <Banner tone="error">{error}</Banner>}
+          {pacientesLista.error && <Banner tone="error">{pacientesLista.error}</Banner>}
           <Table
-            headers={["Historia clínica", "Nombre", "DPI", "Edad", "Sexo", ""]}
-            rows={loading ? [] : pacientes || []}
-            emptyMessage={loading ? "Cargando…" : "No hay pacientes registrados."}
+            headers={["Historia clínica", "Nombre", "DPI", "Edad", "Sexo", "Sangre", ""]}
+            rows={pacientesLista.loading ? [] : pacientesLista.items}
+            emptyMessage={pacientesLista.loading ? "Cargando…" : "No hay pacientes registrados."}
             renderRow={(p) => (
               <>
                 <td className="px-4 py-3">{p.historiaClinica}</td>
@@ -303,16 +611,22 @@ export function RegistroPage({ onVerExpediente }) {
                 <td className="px-4 py-3">{p.dpi}</td>
                 <td className="px-4 py-3">{p.edad ?? "—"}</td>
                 <td className="px-4 py-3">{p.sexo ?? "—"}</td>
+                <td className="px-4 py-3">{p.tipoSangre ?? "—"}</td>
                 <td className="px-4 py-3">
-                  <button className="text-xs font-semibold" style={{ color: "#1F3864" }} onClick={() => onVerExpediente(p.id)}>
+                  <button className="text-xs font-semibold" style={{ color: COLORS.navy }} onClick={() => onVerExpediente(p.id)}>
                     Ver expediente →
                   </button>
                 </td>
               </>
             )}
           />
+          <Pagination page={pacientesLista.page} totalPages={pacientesLista.totalPages} total={pacientesLista.total} onChange={pacientesLista.setPage} />
         </>
       ) : null}
+
+      <Modal open={mostrarFicha} onClose={() => setMostrarFicha(false)} title="Ficha del paciente" maxWidth={640}>
+        {pacienteDetalle && <FichaPacienteImprimible paciente={pacienteDetalle} />}
+      </Modal>
     </div>
   );
 }

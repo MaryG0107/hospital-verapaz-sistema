@@ -9,6 +9,7 @@ const router = Router();
 router.use(requireAuth, requireRole(ROLES.ADMIN));
 
 router.get("/financiero", controller.financiero); // RF-21
+router.get("/ingresos-por-mes", controller.ingresosPorMes);
 router.get("/admisiones", controller.admisiones);
 router.get("/facturacion-por-forma-pago", controller.facturacionPorFormaPago);
 router.get("/inventario-kardex", controller.inventarioKardex); // RNF-10
