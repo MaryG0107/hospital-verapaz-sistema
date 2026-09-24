@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Printer } from "lucide-react";
+import { Printer, Clipboard } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
 import { Table } from "../components/Table";
@@ -7,6 +7,7 @@ import { Button } from "../components/Button";
 import { Banner } from "../components/Banner";
 import { Modal } from "../components/Modal";
 import { FichaPacienteImprimible } from "../components/FichaPacienteImprimible";
+import { CameraScannerModal } from "../components/CameraScannerModal";
 import { PacienteBuscador } from "../components/PacienteBuscador";
 import { FormField, TextInput, Select, TextArea } from "../components/FormField";
 import { Combobox } from "../components/Combobox";
@@ -60,6 +61,7 @@ const CAMPOS_VACIOS = {
   telefono: "", edad: "", sexo: "", tipoSangre: "", estadoCivil: "", ocupacion: "", religion: "",
   nacionalidad: "", nombreConyuge: "", nombrePadre: "", nombreMadre: "",
   contactoEmergencia: "", telefonoEmergencia: "", parentesco: "",
+  encargadoNombre: "", encargadoTelefono: "",
   referidoDe: "", medicoReferenteId: "",
 };
 
@@ -86,9 +88,18 @@ export function RegistroPage({ onVerExpediente }) {
 
   const [ingresoPacienteId, setIngresoPacienteId] = useState(null);
   const [mostrarFicha, setMostrarFicha] = useState(false);
+  const [escanerAbierto, setEscanerAbierto] = useState(false);
+  const [mensajeFichaDocumento, setMensajeFichaDocumento] = useState(null);
   const { data: pacienteDetalle, reload: reloadPacienteDetalle } = useFetch(
     ingresoPacienteId ? `/pacientes/${ingresoPacienteId}` : null,
     { enabled: !!ingresoPacienteId }
+  );
+  // Cambios2: documentos escaneados del paciente (visible para admision y
+  // personal clinico; el backend repite la autorizacion por rol).
+  const puedeVerDocumentos = tieneRol(usuario, ROLES.ADMIN, ROLES.RECEPCION, ROLES.CONSULTA, ROLES.ENFERMERIA);
+  const { data: documentosPaciente, reload: reloadDocumentos } = useFetch(
+    puedeVerDocumentos && ingresoPacienteId ? `/pacientes/${ingresoPacienteId}/documentos` : null,
+    { enabled: !!(puedeVerDocumentos && ingresoPacienteId) }
   );
   const [ingresoForm, setIngresoForm] = useState(CAMPOS_INGRESO_VACIOS);
   const [guardandoIngreso, setGuardandoIngreso] = useState(false);
@@ -96,6 +107,9 @@ export function RegistroPage({ onVerExpediente }) {
 
   useEffect(() => {
     if (!pacienteDetalle) return;
+    // Sprint 3: el egreso clinico llega cifrado desde el backend como objeto
+    // egresoClinico; los campos planos legacy son solo fallback de datos viejos.
+    const eg = pacienteDetalle.egresoClinico || {};
     setIngresoForm({
       tipoSangre: pacienteDetalle.tipoSangre || "",
       fechaIngreso: toDatetimeLocal(pacienteDetalle.fechaIngreso),
@@ -104,12 +118,12 @@ export function RegistroPage({ onVerExpediente }) {
       medicoReferenteId: pacienteDetalle.medicoReferenteId || "",
       impresionClinicaIngreso: pacienteDetalle.impresionClinicaIngreso || "",
       fechaEgreso: toDatetimeLocal(pacienteDetalle.fechaEgreso),
-      diagnosticoEgresoCodigo: pacienteDetalle.diagnosticoEgresoCodigo || "",
-      complicacionesCodigo: pacienteDetalle.complicacionesCodigo || "",
-      operacionesCodigo: pacienteDetalle.operacionesCodigo || "",
+      diagnosticoEgresoCodigo: eg.diagnosticoEgreso ?? pacienteDetalle.diagnosticoEgresoCodigo ?? "",
+      complicacionesCodigo: eg.complicaciones ?? pacienteDetalle.complicacionesCodigo ?? "",
+      operacionesCodigo: eg.operaciones ?? pacienteDetalle.operacionesCodigo ?? "",
       condicionEgreso: pacienteDetalle.condicionEgreso || "",
-      autopsia: pacienteDetalle.autopsia == null ? "" : pacienteDetalle.autopsia ? "si" : "no",
-      causaMuerte: pacienteDetalle.causaMuerte || "",
+      autopsia: eg.autopsia == null ? (pacienteDetalle.autopsia == null ? "" : pacienteDetalle.autopsia ? "si" : "no") : eg.autopsia ? "si" : "no",
+      causaMuerte: eg.causaMuerte ?? pacienteDetalle.causaMuerte ?? "",
       matNumeroHijo: pacienteDetalle.maternidad?.numeroHijo ?? "",
       matFecha: toDateInput(pacienteDetalle.maternidad?.fecha),
       matHora: pacienteDetalle.maternidad?.hora || "",
@@ -148,12 +162,16 @@ export function RegistroPage({ onVerExpediente }) {
       medicoReferenteId: f.medicoReferenteId ? Number(f.medicoReferenteId) : null,
       impresionClinicaIngreso: f.impresionClinicaIngreso || null,
       fechaEgreso: f.fechaEgreso ? new Date(f.fechaEgreso).toISOString() : null,
-      diagnosticoEgresoCodigo: f.diagnosticoEgresoCodigo || null,
-      complicacionesCodigo: f.complicacionesCodigo || null,
-      operacionesCodigo: f.operacionesCodigo || null,
       condicionEgreso: f.condicionEgreso || null,
-      autopsia: f.autopsia === "" ? null : f.autopsia === "si",
-      causaMuerte: f.causaMuerte || null,
+      // Sprint 3: datos clinicos de egreso viajan como objeto; el backend los
+      // cifra (AES-256-GCM) antes de guardarlos en EgresoClinico.
+      egresoClinico: {
+        diagnosticoEgreso: f.diagnosticoEgresoCodigo || null,
+        complicaciones: f.complicacionesCodigo || null,
+        operaciones: f.operacionesCodigo || null,
+        autopsia: f.autopsia === "" ? null : f.autopsia === "si",
+        causaMuerte: f.causaMuerte || null,
+      },
     };
     if (f.matNumeroHijo || f.matFecha || f.matHora || f.matSexo || f.matCondicion) {
       payload.maternidad = {
@@ -172,6 +190,53 @@ export function RegistroPage({ onVerExpediente }) {
       setMensajeIngreso({ tone: "error", texto: err.message });
     } finally {
       setGuardandoIngreso(false);
+    }
+  }
+
+  async function descargarDocumento(pacienteId, doc, alError) {
+    try {
+      const blob = await api.getBlob(`/pacientes/${pacienteId}/documentos/${doc.id}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.nombreOriginal;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alError({ tone: "error", texto: err.message });
+    }
+  }
+
+  async function eliminarDocumento(pacienteId, doc, reload, alError) {
+    if (!window.confirm(`¿Eliminar el documento "${doc.nombreOriginal}" del expediente?`)) return;
+    try {
+      await api.del(`/pacientes/${pacienteId}/documentos/${doc.id}`);
+      reload();
+      alError({ tone: "success", texto: "Documento eliminado del expediente." });
+    } catch (err) {
+      alError({ tone: "error", texto: err.message });
+    }
+  }
+
+  // Cambios2: el escaner entrega el PDF generado; se sube al expediente del
+  // paciente seleccionado en "Ingreso / Egreso" con sus metadatos.
+  async function confirmarDocumento(blob, { paginas, nombre }) {
+    if (!ingresoPacienteId) {
+      setMensajeFichaDocumento({ tone: "error", texto: "No hay paciente seleccionado para asociar el documento." });
+      return;
+    }
+    const fd = new FormData();
+    fd.append("documento", new File([blob], nombre, { type: "application/pdf" }));
+    fd.append("nombreOriginal", nombre);
+    fd.append("paginas", String(paginas));
+    try {
+      await api.post(`/pacientes/${ingresoPacienteId}/documentos`, fd);
+      reloadDocumentos();
+      setMensajeFichaDocumento({ tone: "success", texto: `Documento guardado en el expediente (${paginas} página${paginas === 1 ? "" : "s"}).` });
+    } catch (err) {
+      setMensajeFichaDocumento({ tone: "error", texto: err.message });
     }
   }
 
@@ -251,6 +316,24 @@ export function RegistroPage({ onVerExpediente }) {
           Pacientes registrados
         </button>
       </div>
+
+      {/* Cambios2/revision: escaneo documental independiente de pacientes
+          existentes. Boton hasta arriba de la pestana "Paciente nuevo" con
+          icono de portapapeles; preparado para el OCR futuro que autoguardara
+          un nuevo paciente a partir del documento escaneado. */}
+      {tab === "nuevo" && puedeRegistrar && (
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+          <p className="text-xs" style={{ color: "#888" }}>
+            Escanee el documento antes o después de registrar: la captura se procesa automáticamente (bordes y perspectiva) y se descarga como PDF.
+          </p>
+          <Button onClick={() => setEscanerAbierto(true)}>
+            <span className="flex items-center gap-1.5">
+              <Clipboard size={15} aria-hidden />
+              <span aria-label="Escanear documento">Escanear documento</span>
+            </span>
+          </Button>
+        </div>
+      )}
 
       {tab === "nuevo" && puedeRegistrar ? (
         <Card>
@@ -426,6 +509,20 @@ export function RegistroPage({ onVerExpediente }) {
                 </Select>
               )}
             </FormField>
+            <FormField label="Encargado / responsable legal (nombre)">
+              <TextInput placeholder="Puede ser distinto del contacto de emergencia" value={form.encargadoNombre} onChange={(e) => setCampo("encargadoNombre", e.target.value)} />
+            </FormField>
+            <FormField label="Teléfono del encargado">
+              <TextInput
+                value={formatearTelefono(form.encargadoTelefono)}
+                onChange={(e) => setCampo("encargadoTelefono", limpiarTelefono(e.target.value))}
+                placeholder="0000 0000"
+                inputMode="numeric"
+              />
+              {telefonoIncompleto(form.encargadoTelefono) && (
+                <p className="text-xs mt-1" style={{ color: "#B08B2E" }}>El teléfono debe tener 8 dígitos.</p>
+              )}
+            </FormField>
             <div className="col-span-1 sm:col-span-2 lg:col-span-3">
               <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
                 <input
@@ -457,7 +554,14 @@ export function RegistroPage({ onVerExpediente }) {
             </div>
           </form>
         </Card>
-      ) : tab === "ingreso" && puedeRegistrar ? (
+      ) : null}
+
+      {/* Cambios2: escaneo documental del paciente dentro de "Paciente nuevo".
+          Se toma la foto o se sube el archivo y el sistema detecta bordes,
+          corrige perspectiva y aplica el filtro automaticamente. */}
+      
+
+      {tab === "ingreso" && puedeRegistrar ? (
         <Card>
           <p className="text-xs font-semibold mb-4" style={{ color: "#888" }}>
             Ficha de ingreso y egreso (RF-05 a RF-09) — se guarda sobre un paciente ya registrado.
@@ -625,8 +729,25 @@ export function RegistroPage({ onVerExpediente }) {
       ) : null}
 
       <Modal open={mostrarFicha} onClose={() => setMostrarFicha(false)} title="Ficha del paciente" maxWidth={640}>
-        {pacienteDetalle && <FichaPacienteImprimible paciente={pacienteDetalle} />}
+        {pacienteDetalle && (
+          <>
+            {mensajeFichaDocumento && <Banner tone={mensajeFichaDocumento.tone}>{mensajeFichaDocumento.texto}</Banner>}
+            <FichaPacienteImprimible
+              paciente={pacienteDetalle}
+              documentos={documentosPaciente}
+              onDescargarDocumento={(doc) => descargarDocumento(ingresoPacienteId, doc, setMensajeFichaDocumento)}
+              onEliminarDocumento={puedeRegistrar ? (doc) => eliminarDocumento(ingresoPacienteId, doc, reloadDocumentos, setMensajeFichaDocumento) : undefined}
+            />
+          </>
+        )}
       </Modal>
+
+      <CameraScannerModal
+        open={escanerAbierto}
+        onClose={() => setEscanerAbierto(false)}
+        pacienteId={ingresoPacienteId}
+        onConfirmar={confirmarDocumento}
+      />
     </div>
   );
 }
