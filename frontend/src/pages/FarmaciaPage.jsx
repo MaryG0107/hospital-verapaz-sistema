@@ -227,7 +227,7 @@ export function FarmaciaPage() {
               <div className="font-semibold text-sm">Venta directa (RF-20/RF-24/RF-27)</div>
             </div>
             <p className="text-xs mb-4" style={{ color: "#888" }}>
-              Agregue uno o varios medicamentos al carrito. Puede asociarla a un paciente (para su registro) o dejarla sin paciente. Al cobrar se genera una sola factura con el detalle de cada medicamento.
+              Agregue medicamentos al carrito, con o sin paciente asociado. Al cobrar se genera una sola factura.
             </p>
             {mensajeCarrito && <Banner tone={mensajeCarrito.tone}>{mensajeCarrito.texto}</Banner>}
 

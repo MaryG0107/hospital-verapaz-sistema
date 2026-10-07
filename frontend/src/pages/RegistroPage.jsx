@@ -480,10 +480,7 @@ export function RegistroPage({ onVerExpediente }) {
         <Card style={{ marginBottom: 16 }}>
           <div className="font-semibold text-sm mb-1">Escanear expediente físico (opcional)</div>
           <p className="text-xs mb-4" style={{ color: "#888" }}>
-            Si el doctor ya llenó el expediente en papel, escanéelo aquí antes de registrar: el sistema genera el PDF
-            automáticamente y trata de leer nombre, DPI, historia clínica, dirección, teléfono y fechas para autorellenar el formulario de abajo
-            (siempre revisable). El PDF original queda guardado tal cual, sin alterar la letra ni la firma del doctor,
-            y se adjunta al paciente al hacer clic en "Guardar paciente".
+            Autorellena el formulario de abajo (siempre revisable). El PDF original se guarda intacto y queda adjunto al paciente.
           </p>
 
           {lecturaAvanzada?.disponible && (
@@ -555,7 +552,7 @@ export function RegistroPage({ onVerExpediente }) {
       {tab === "nuevo" && puedeRegistrar ? (
         <Card>
           <p className="text-xs font-semibold mb-4" style={{ color: "#888" }}>
-            Historia clínica: si la hoja en papel ya trae una, escríbala tal cual; si se deja vacía, se genera automáticamente al guardar (RF-03). El DPI no puede repetirse (RF-04).
+            Historia clínica vacía = se genera sola (RF-03). El DPI no se repite (RF-04).
           </p>
           {mensaje && <Banner tone={mensaje.tone}>{mensaje.texto}</Banner>}
           <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

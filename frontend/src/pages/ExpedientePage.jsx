@@ -424,8 +424,7 @@ export function ExpedientePage({ pacienteIdInicial }) {
 
       <Modal open={modalAbierto} onClose={() => setModalAbierto(false)} title="Información médica confidencial" icon={ShieldAlert}>
         <p className="text-sm mb-4" style={{ color: COLORS.textMuted }}>
-          Está por ver el diagnóstico confidencial de <strong style={{ color: COLORS.text }}>{patient?.nombreCompleto}</strong>.
-          Esta acción queda registrada a su nombre (RNF-08) — el Administrador puede consultar quién vio qué y cuándo desde <strong style={{ color: COLORS.text }}>Reportes</strong>.
+          Va a ver el diagnóstico confidencial de <strong style={{ color: COLORS.text }}>{patient?.nombreCompleto}</strong>. Esta acción queda registrada (RNF-08) y es consultable en <strong style={{ color: COLORS.text }}>Reportes</strong>.
         </p>
 
         {mensajeError && <Banner tone="error">{mensajeError}</Banner>}

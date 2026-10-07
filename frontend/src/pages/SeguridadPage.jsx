@@ -33,8 +33,7 @@ export function SeguridadPage() {
         <Card>
           <div className="font-semibold text-sm mb-2">🔑 Tokens de acceso temporal</div>
           <p className="text-sm" style={{ color: "#666" }}>
-            El Administrador asigna roles, funciones y permisos de token (RF-29, RF-30, RF-32, RF-33, RF-34).
-            Duración del token: 5–15 minutos · Un solo uso. Solicítelo en el módulo de Expediente Clínico si necesita ver un diagnóstico.
+            El Administrador asigna roles y permisos de token (RF-29 a RF-34). Token: 5–15 min, un solo uso — solicítelo desde Expediente Clínico.
           </p>
         </Card>
       </div>
