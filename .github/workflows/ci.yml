@@ -203,7 +203,6 @@ jobs:
 
       - name: Start frontend preview server
         run: |
-          cd frontend
           nohup npx vite preview --port 5173 --strictPort > frontend.log 2>&1 &
           echo $! > frontend.pid
           sleep 10
