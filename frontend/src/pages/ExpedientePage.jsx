@@ -14,6 +14,7 @@ import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
 import { ROLES, tieneRol } from "../utils/roles";
+import { fechaHoraLocal } from "../utils/fechas";
 
 const TIPOS_ATENCION = [
   { value: "consulta_externa", label: "Consulta externa" },
@@ -428,7 +429,14 @@ export function ExpedientePage({ pacienteIdInicial }) {
 
       {patient && (
         <Card style={{ marginBottom: 16 }}>
-          <div className="font-semibold text-sm mb-2">Datos básicos del paciente</div>
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="font-semibold text-sm">Datos básicos del paciente</div>
+            {patient.creadoEn && (
+              <div className="text-[11px] shrink-0 text-right" style={{ color: "#999" }}>
+                Registrado en el sistema<br />{fechaHoraLocal(patient.creadoEn)}
+              </div>
+            )}
+          </div>
           <div className="text-sm" style={{ color: "#666" }}>
             {patient.nombreCompleto} · {patient.historiaClinica} · {patient.edad ?? "—"} años · {patient.sexo ?? "—"} · Sangre: {patient.tipoSangre ?? "—"}
           </div>

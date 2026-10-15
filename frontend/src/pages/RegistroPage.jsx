@@ -17,13 +17,13 @@ import { Pagination } from "../components/Pagination";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { ROLES, tieneRol } from "../utils/roles";
-import { ESTADOS_CIVILES } from "../utils/guatemala";
+import { ESTADOS_CIVILES, NACIONALIDADES } from "../utils/guatemala";
 import { CONDICIONES_EGRESO, CONDICIONES_EGRESO_BEBE } from "../utils/condicionesEgreso";
 import { Cie10Input } from "../components/Cie10Input";
 import { limpiarDPI, validarDPI } from "../utils/dpi";
 import { limpiarTelefono, telefonoIncompleto } from "../utils/telefono";
 import { COLORS } from "../styles/tokens";
-import { fechaDia, fechaLocal } from "../utils/fechas";
+import { fechaDia, fechaLocal, fechaHoraLocal } from "../utils/fechas";
 
 const CAMPOS_INGRESO_VACIOS = {
   idNombre: "", idDpi: "", idHistoria: "", idDireccion: "", idLugarNacimiento: "",
@@ -63,6 +63,13 @@ function separarFechaHora(iso) {
 function horaNumericaValida(valor) {
   if (!/^\d{4}$/.test(valor || "")) return false;
   return Number(valor.slice(0, 2)) < 24 && Number(valor.slice(2)) < 60;
+}
+
+// El valor se guarda como 4 digitos crudos (HHMM, sin ":"), pero se muestra
+// con los dos puntos para que no parezca que el campo los rechaza.
+function formatearHoraVisual(valor) {
+  const limpio = (valor || "").replace(/\D/g, "").slice(0, 4);
+  return limpio.length > 2 ? `${limpio.slice(0, 2)}:${limpio.slice(2)}` : limpio;
 }
 
 function horaParaAlmacenar(valor) {
@@ -175,6 +182,15 @@ function ListaOperaciones({ items, onChange }) {
   );
 }
 
+const OTRO = "__otro__";
+// Mismo listado ya usado en Dev-Mari para que el dato quede uniforme entre
+// ramas; "Otro…" abre un campo de texto libre para el resto de casos.
+const RELIGIONES = ["Católica", "Evangélica / Cristiana", "Testigo de Jehová", "Mormona (SUD)", "Espiritualidad Maya", "Ninguna / Atea"];
+
+function esOtro(lista, valor) {
+  return valor !== "" && !lista.includes(valor);
+}
+
 const CAMPOS_VACIOS = {
   nombreCompleto: "", dpi: "", historiaClinica: "", fechaIngreso: "", horaIngreso: "",
   direccion: "", telefono: "", lugarNacimiento: "", fechaNacimiento: "", edad: "", sexo: "",
@@ -234,6 +250,8 @@ export function RegistroPage({ onVerExpediente }) {
   const [ingresoForm, setIngresoForm] = useState(CAMPOS_INGRESO_VACIOS);
   const [guardandoIngreso, setGuardandoIngreso] = useState(false);
   const [mensajeIngreso, setMensajeIngreso] = useState(null);
+  const [idReligionOtro, setIdReligionOtro] = useState(false);
+  const [idNacionalidadOtro, setIdNacionalidadOtro] = useState(false);
 
   useEffect(() => {
     if (!pacienteDetalle) return;
@@ -291,6 +309,8 @@ export function RegistroPage({ onVerExpediente }) {
       matCausaMuerte: maternidad.causaMuerteBebe || "",
       matFechaMuerte: toDateInput(maternidad.fechaMuerteBebe),
     });
+    setIdReligionOtro(esOtro(RELIGIONES, pacienteDetalle.religion || ""));
+    setIdNacionalidadOtro(esOtro(NACIONALIDADES, pacienteDetalle.nacionalidad || ""));
   }, [pacienteDetalle]);
 
   function setCampoIngreso(campo, valor) {
@@ -504,6 +524,8 @@ export function RegistroPage({ onVerExpediente }) {
   const [form, setForm] = useState(CAMPOS_VACIOS);
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
+  const [religionOtro, setReligionOtro] = useState(false);
+  const [nacionalidadOtro, setNacionalidadOtro] = useState(false);
   // Dev-Mari: datos opcionales colapsables. Ocultos por defecto siempre (se
   // despliegan solo con el clic del usuario en el interruptor) — nunca se
   // auto-muestran, ni al entrar al módulo ni al quitar un escaneo.
@@ -664,9 +686,11 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
 
       setMensaje({
         tone: "success",
-        texto: `Paciente registrado con historia clínica ${paciente.historiaClinica}${documentoPendiente ? " (expediente escaneado adjunto)." : "."}`,
+        texto: `Paciente registrado con historia clínica ${paciente.historiaClinica}${documentoPendiente ? " (expediente escaneado adjunto)." : "."} Registrado en el sistema el ${fechaHoraLocal(paciente.creadoEn)}.`,
       });
       setForm(CAMPOS_VACIOS);
+      setReligionOtro(false);
+      setNacionalidadOtro(false);
       setDocumentoPendiente(null);
       setAdjuntos([]);
       setMensajeDocumento(null);
@@ -722,10 +746,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
         <Card style={{ marginBottom: 16 }}>
           <div className="font-semibold text-sm mb-1">Escanear expediente físico (opcional)</div>
           <p className="text-xs mb-4" style={{ color: "#888" }}>
-            Si el doctor ya llenó el expediente en papel, escanéelo aquí antes de registrar: el sistema genera el PDF
-            automáticamente y trata de leer nombre, DPI, historia clínica, dirección, teléfono y fechas para autorellenar el formulario de abajo
-            (siempre revisable). El PDF original queda guardado tal cual, sin alterar la letra ni la firma del doctor,
-            y se adjunta al paciente al hacer clic en "Guardar paciente".
+            Escanee el expediente en papel antes de registrar: se autorellena el formulario y se adjunta al guardar.
           </p>
 
           {lecturaAvanzada?.disponible && (
@@ -808,8 +829,8 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                   <TextInput name="fechaIngreso" type="date" required value={form.fechaIngreso} onChange={(e) => setCampo("fechaIngreso", e.target.value)} />
                   {avisoOCR("fechaIngreso")}
                 </FormField>
-                <FormField label="Hora de ingreso (HHMM)">
-                  <TextInput name="horaIngreso" required inputMode="numeric" pattern="[0-9]{4}" placeholder="1430" value={form.horaIngreso} onChange={(e) => setCampo("horaIngreso", e.target.value.replace(/\D/g, "").slice(0, 4))} />
+                <FormField label="Hora de ingreso (HH:MM)">
+                  <TextInput name="horaIngreso" required inputMode="numeric" placeholder="14:30" value={formatearHoraVisual(form.horaIngreso)} onChange={(e) => setCampo("horaIngreso", e.target.value.replace(/\D/g, "").slice(0, 4))} />
                 </FormField>
                 <FormField label="Historia clínica">
                   <TextInput name="historiaClinica" required inputMode="numeric" pattern="[0-9]+" value={form.historiaClinica} onChange={(e) => setCampo("historiaClinica", e.target.value.replace(/\D/g, "").slice(0, 40))} />
@@ -839,14 +860,60 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                   <TextInput name="edad" required inputMode="numeric" pattern="[0-9]{1,3}" value={form.edad} onChange={(e) => setCampo("edad", e.target.value.replace(/\D/g, "").slice(0, 3))} />
                 </FormField>
                 <FormField label="Sexo">
-                  <TextInput name="sexo" required value={form.sexo} onChange={(e) => setCampo("sexo", e.target.value)} />
+                  <Select name="sexo" required value={form.sexo} onChange={(e) => setCampo("sexo", e.target.value)}>
+                    <option value="">Seleccionar…</option>
+                    <option value="Femenino">Femenino</option>
+                    <option value="Masculino">Masculino</option>
+                  </Select>
                 </FormField>
                 <FormField label="Estado civil · seleccione uno">
                   <OpcionesExclusivas name="estadoCivil" value={form.estadoCivil} onChange={(valor) => setCampo("estadoCivil", valor)} options={ESTADOS_CIVILES.map((estado) => ({ ...estado, label: `${estado.value} · ${estado.label}` }))} required />
                 </FormField>
                 <FormField label="Ocupación"><TextInput name="ocupacion" required value={form.ocupacion} onChange={(e) => setCampo("ocupacion", e.target.value)} /></FormField>
-                <FormField label="Religión"><TextInput name="religion" required value={form.religion} onChange={(e) => setCampo("religion", e.target.value)} /></FormField>
-                <FormField label="Nacionalidad"><TextInput name="nacionalidad" required value={form.nacionalidad} onChange={(e) => setCampo("nacionalidad", e.target.value)} /></FormField>
+                <FormField label="Religión">
+                  {religionOtro ? (
+                    <>
+                      <TextInput name="religion" required placeholder="Especifique la religión" value={form.religion} onChange={(e) => setCampo("religion", e.target.value)} />
+                      <button type="button" onClick={() => { setReligionOtro(false); setCampo("religion", ""); }} className="text-xs mt-1" style={{ color: COLORS.navy }}>← Volver a la lista</button>
+                    </>
+                  ) : (
+                    <Select
+                      name="religion"
+                      required
+                      value={form.religion}
+                      onChange={(e) => {
+                        if (e.target.value === OTRO) { setReligionOtro(true); setCampo("religion", ""); }
+                        else setCampo("religion", e.target.value);
+                      }}
+                    >
+                      <option value="">Seleccionar…</option>
+                      {RELIGIONES.map((r) => <option key={r} value={r}>{r}</option>)}
+                      <option value={OTRO}>Otro…</option>
+                    </Select>
+                  )}
+                </FormField>
+                <FormField label="Nacionalidad">
+                  {nacionalidadOtro ? (
+                    <>
+                      <TextInput name="nacionalidad" required placeholder="Especifique la nacionalidad" value={form.nacionalidad} onChange={(e) => setCampo("nacionalidad", e.target.value)} />
+                      <button type="button" onClick={() => { setNacionalidadOtro(false); setCampo("nacionalidad", ""); }} className="text-xs mt-1" style={{ color: COLORS.navy }}>← Volver a la lista</button>
+                    </>
+                  ) : (
+                    <Select
+                      name="nacionalidad"
+                      required
+                      value={form.nacionalidad}
+                      onChange={(e) => {
+                        if (e.target.value === OTRO) { setNacionalidadOtro(true); setCampo("nacionalidad", ""); }
+                        else setCampo("nacionalidad", e.target.value);
+                      }}
+                    >
+                      <option value="">Seleccionar…</option>
+                      {NACIONALIDADES.map((n) => <option key={n} value={n}>{n}</option>)}
+                      <option value={OTRO}>Otro…</option>
+                    </Select>
+                  )}
+                </FormField>
                 <FormField label="DPI / CUI">
                   <TextInput name="dpi" required inputMode="numeric" pattern="[0-9]{13}" placeholder="13 dígitos" value={form.dpi} onChange={(e) => setCampo("dpi", limpiarDPI(e.target.value))} />
                   {dpiEstado.mensaje && <p className="text-xs mt-1" style={{ color: DPI_COLOR[dpiEstado.estado] }}>{dpiEstado.mensaje}</p>}
@@ -888,7 +955,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                 <FormField label="Impresión clínica de ingreso"><TextArea name="impresionClinicaIngreso" rows={2} value={form.impresionClinicaIngreso} onChange={(e) => setCampo("impresionClinicaIngreso", e.target.value)} /></FormField>
               </div>
               <FormField label="Fecha de egreso"><TextInput name="fechaEgreso" type="date" value={form.fechaEgreso} onChange={(e) => setCampo("fechaEgreso", e.target.value)} /></FormField>
-              <FormField label="Hora de egreso (HHMM)"><TextInput name="horaEgreso" inputMode="numeric" pattern="[0-9]{4}" placeholder="1430" value={form.horaEgreso} onChange={(e) => setCampo("horaEgreso", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
+              <FormField label="Hora de egreso (HH:MM)"><TextInput name="horaEgreso" inputMode="numeric" placeholder="14:30" value={formatearHoraVisual(form.horaEgreso)} onChange={(e) => setCampo("horaEgreso", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
               <ListaCodificada titulo="Diagnóstico de egreso (en orden de importancia)" singular="Diagnóstico" items={form.diagnosticosEgreso} onChange={(items) => setCampo("diagnosticosEgreso", items)} />
               <ListaCodificada titulo="Complicaciones" singular="Complicación" items={form.complicacionesEgreso} onChange={(items) => setCampo("complicacionesEgreso", items)} />
               <ListaOperaciones items={form.operacionesLista} onChange={(items) => setCampo("operacionesLista", items)} />
@@ -899,7 +966,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <FormField label="No. de hijo"><TextInput name="matNumeroHijo" inputMode="numeric" pattern="[0-9]+" value={form.matNumeroHijo} onChange={(e) => setCampo("matNumeroHijo", e.target.value.replace(/\D/g, ""))} /></FormField>
                   <FormField label="Fecha de nacimiento"><TextInput name="matFecha" type="date" value={form.matFecha} onChange={(e) => setCampo("matFecha", e.target.value)} /></FormField>
-                  <FormField label="Hora de nacimiento (HHMM)"><TextInput name="matHora" inputMode="numeric" pattern="[0-9]{4}" placeholder="1430" value={form.matHora} onChange={(e) => setCampo("matHora", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
+                  <FormField label="Hora de nacimiento (HH:MM)"><TextInput name="matHora" inputMode="numeric" placeholder="14:30" value={formatearHoraVisual(form.matHora)} onChange={(e) => setCampo("matHora", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
                   <FormField label="Sexo del bebé">
                     <OpcionesExclusivas name="sexoBebeNuevo" value={form.matSexo} onChange={(valor) => setCampo("matSexo", valor)} options={[{ value: "F", label: "F" }, { value: "M", label: "M" }]} />
                   </FormField>
@@ -965,11 +1032,55 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                   <FormField label="Lugar de nacimiento"><TextInput value={ingresoForm.idLugarNacimiento} onChange={(e) => setCampoIngreso("idLugarNacimiento", e.target.value)} /></FormField>
                   <FormField label="Fecha de nacimiento"><TextInput type="date" value={ingresoForm.idFechaNacimiento} onChange={(e) => setCampoIngreso("idFechaNacimiento", e.target.value)} /></FormField>
                   <FormField label="Edad"><TextInput inputMode="numeric" value={ingresoForm.idEdad} onChange={(e) => setCampoIngreso("idEdad", e.target.value.replace(/\D/g, "").slice(0, 3))} /></FormField>
-                  <FormField label="Sexo"><TextInput value={ingresoForm.idSexo} onChange={(e) => setCampoIngreso("idSexo", e.target.value)} /></FormField>
+                  <FormField label="Sexo">
+                    <Select value={ingresoForm.idSexo} onChange={(e) => setCampoIngreso("idSexo", e.target.value)}>
+                      <option value="">Seleccionar…</option>
+                      <option value="Femenino">Femenino</option>
+                      <option value="Masculino">Masculino</option>
+                    </Select>
+                  </FormField>
                   <FormField label="Estado civil"><OpcionesExclusivas name="estadoCivilEditar" value={ingresoForm.idEstadoCivil} onChange={(v) => setCampoIngreso("idEstadoCivil", v)} options={ESTADOS_CIVILES.map((estado) => ({ ...estado, label: `${estado.value} · ${estado.label}` }))} /></FormField>
                   <FormField label="Ocupación"><TextInput value={ingresoForm.idOcupacion} onChange={(e) => setCampoIngreso("idOcupacion", e.target.value)} /></FormField>
-                  <FormField label="Religión"><TextInput value={ingresoForm.idReligion} onChange={(e) => setCampoIngreso("idReligion", e.target.value)} /></FormField>
-                  <FormField label="Nacionalidad"><TextInput value={ingresoForm.idNacionalidad} onChange={(e) => setCampoIngreso("idNacionalidad", e.target.value)} /></FormField>
+                  <FormField label="Religión">
+                    {idReligionOtro ? (
+                      <>
+                        <TextInput placeholder="Especifique la religión" value={ingresoForm.idReligion} onChange={(e) => setCampoIngreso("idReligion", e.target.value)} />
+                        <button type="button" onClick={() => { setIdReligionOtro(false); setCampoIngreso("idReligion", ""); }} className="text-xs mt-1" style={{ color: COLORS.navy }}>← Volver a la lista</button>
+                      </>
+                    ) : (
+                      <Select
+                        value={ingresoForm.idReligion}
+                        onChange={(e) => {
+                          if (e.target.value === OTRO) { setIdReligionOtro(true); setCampoIngreso("idReligion", ""); }
+                          else setCampoIngreso("idReligion", e.target.value);
+                        }}
+                      >
+                        <option value="">Seleccionar…</option>
+                        {RELIGIONES.map((r) => <option key={r} value={r}>{r}</option>)}
+                        <option value={OTRO}>Otro…</option>
+                      </Select>
+                    )}
+                  </FormField>
+                  <FormField label="Nacionalidad">
+                    {idNacionalidadOtro ? (
+                      <>
+                        <TextInput placeholder="Especifique la nacionalidad" value={ingresoForm.idNacionalidad} onChange={(e) => setCampoIngreso("idNacionalidad", e.target.value)} />
+                        <button type="button" onClick={() => { setIdNacionalidadOtro(false); setCampoIngreso("idNacionalidad", ""); }} className="text-xs mt-1" style={{ color: COLORS.navy }}>← Volver a la lista</button>
+                      </>
+                    ) : (
+                      <Select
+                        value={ingresoForm.idNacionalidad}
+                        onChange={(e) => {
+                          if (e.target.value === OTRO) { setIdNacionalidadOtro(true); setCampoIngreso("idNacionalidad", ""); }
+                          else setCampoIngreso("idNacionalidad", e.target.value);
+                        }}
+                      >
+                        <option value="">Seleccionar…</option>
+                        {NACIONALIDADES.map((n) => <option key={n} value={n}>{n}</option>)}
+                        <option value={OTRO}>Otro…</option>
+                      </Select>
+                    )}
+                  </FormField>
                 </div>
               </div>
 
@@ -977,7 +1088,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                 <div className="font-semibold text-sm mb-3" style={{ color: COLORS.navy }}>Ingreso y datos opcionales</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <FormField label="Fecha de ingreso"><TextInput type="date" value={ingresoForm.fechaIngreso} onChange={(e) => setCampoIngreso("fechaIngreso", e.target.value)} /></FormField>
-                  <FormField label="Hora de ingreso (HHMM)"><TextInput inputMode="numeric" pattern="[0-9]{4}" value={ingresoForm.horaIngreso} onChange={(e) => setCampoIngreso("horaIngreso", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
+                  <FormField label="Hora de ingreso (HH:MM)"><TextInput inputMode="numeric" placeholder="14:30" value={formatearHoraVisual(ingresoForm.horaIngreso)} onChange={(e) => setCampoIngreso("horaIngreso", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
                   <FormField label="Nombre del cónyuge"><TextInput value={ingresoForm.nombreConyuge} onChange={(e) => setCampoIngreso("nombreConyuge", e.target.value)} /></FormField>
                   <FormField label="Dirección del cónyuge"><TextInput value={ingresoForm.direccionConyuge} onChange={(e) => setCampoIngreso("direccionConyuge", e.target.value)} /></FormField>
                   <FormField label="Teléfono del cónyuge"><TextInput inputMode="numeric" value={ingresoForm.telefonoConyuge} onChange={(e) => setCampoIngreso("telefonoConyuge", limpiarTelefono(e.target.value))} /></FormField>
@@ -999,7 +1110,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                 <div className="font-semibold text-sm mb-3" style={{ color: COLORS.navy }}>Egreso</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                   <FormField label="Fecha de egreso"><TextInput type="date" value={ingresoForm.fechaEgreso} onChange={(e) => setCampoIngreso("fechaEgreso", e.target.value)} /></FormField>
-                  <FormField label="Hora de egreso (HHMM)"><TextInput inputMode="numeric" pattern="[0-9]{4}" value={ingresoForm.horaEgreso} onChange={(e) => setCampoIngreso("horaEgreso", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
+                  <FormField label="Hora de egreso (HH:MM)"><TextInput inputMode="numeric" placeholder="14:30" value={formatearHoraVisual(ingresoForm.horaEgreso)} onChange={(e) => setCampoIngreso("horaEgreso", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
                   <FormField label="Condición de egreso del paciente">
                     <Select value={ingresoForm.condicionEgreso} onChange={(e) => handleCondicionEgresoChange(e.target.value)}>
                       <option value="">Seleccionar…</option>
@@ -1024,7 +1135,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <FormField label="No. de hijo"><TextInput inputMode="numeric" value={ingresoForm.matNumeroHijo} onChange={(e) => setCampoIngreso("matNumeroHijo", e.target.value.replace(/\D/g, ""))} /></FormField>
                   <FormField label="Fecha de nacimiento"><TextInput type="date" value={ingresoForm.matFecha} onChange={(e) => setCampoIngreso("matFecha", e.target.value)} /></FormField>
-                  <FormField label="Hora de nacimiento (HHMM)"><TextInput inputMode="numeric" pattern="[0-9]{4}" value={ingresoForm.matHora} onChange={(e) => setCampoIngreso("matHora", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
+                  <FormField label="Hora de nacimiento (HH:MM)"><TextInput inputMode="numeric" placeholder="14:30" value={formatearHoraVisual(ingresoForm.matHora)} onChange={(e) => setCampoIngreso("matHora", e.target.value.replace(/\D/g, "").slice(0, 4))} /></FormField>
                   <FormField label="Sexo del bebé"><OpcionesExclusivas name="sexoBebeEditar" value={ingresoForm.matSexo} onChange={(v) => setCampoIngreso("matSexo", v)} options={[{ value: "F", label: "F" }, { value: "M", label: "M" }]} /></FormField>
                   <div className="sm:col-span-2"><FormField label="Condición de egreso del bebé"><OpcionesExclusivas name="condicionBebeEditar" value={ingresoForm.matCondicion} onChange={(v) => setCampoIngreso("matCondicion", v)} options={CONDICIONES_EGRESO_BEBE} /></FormField></div>
                   <FormField label="Autopsia del bebé">

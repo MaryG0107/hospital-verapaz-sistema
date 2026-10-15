@@ -46,20 +46,27 @@ export async function generarPdfDePaginas(paginas, { tamano = DOCUMENTO_CONFIG.T
   for (const dataUrl of paginas) {
     const { ancho, alto } = await dimensionesImagen(dataUrl);
     const horizontal = ancho > alto;
-    const orientacion = horizontal ? "landscape" : "portrait";
-    pdf = pdf || new jsPDF({ unit: "mm", format: tamano.formato, orientation: orientacion, compress: true });
-    if (insertadas > 0) pdf.addPage(tamano.formato, orientacion);
-
-    const anchoPagina = horizontal ? tamano.alto : tamano.ancho;
-    const altoPagina = horizontal ? tamano.ancho : tamano.alto;
-    const disponibleW = anchoPagina - MARGEN_MM * 2;
-    const disponibleH = altoPagina - MARGEN_MM * 2;
-    const escala = Math.min(disponibleW / ancho, disponibleH / alto);
-    const dw = ancho * escala;
+    // La hoja se arma del TAMAÑO/PROPORCION DE LA FOTO, no al reves: antes
+    // se forzaba una hoja carta de proporcion fija y la foto se ajustaba
+    // adentro — si la foto no tenia esa misma proporcion, o sobraba margen
+    // en blanco ("contain") o se recortaba contenido real al estirarla al
+    // ancho completo. Ninguna de las dos sirve para un expediente clinico:
+    // no se puede perder informacion ni tampoco inventar espacio en blanco.
+    // El ancho de referencia sigue siendo el de la hoja configurada
+    // (carta/A4); el alto de CADA pagina se calcula aparte para que la foto
+    // completa quepa exacta, sin recorte.
+    const anchoReferencia = horizontal ? tamano.alto : tamano.ancho;
+    const disponibleW = anchoReferencia - MARGEN_MM * 2;
+    const escala = disponibleW / ancho;
+    const dw = disponibleW;
     const dh = alto * escala;
-    const x = (anchoPagina - dw) / 2;
-    const y = (altoPagina - dh) / 2;
-    pdf.addImage(dataUrl, "JPEG", x, y, dw, dh, undefined, "FAST");
+    const altoPagina = dh + MARGEN_MM * 2;
+    const formato = [anchoReferencia, altoPagina];
+
+    pdf = pdf || new jsPDF({ unit: "mm", format: formato, compress: true });
+    if (insertadas > 0) pdf.addPage(formato);
+
+    pdf.addImage(dataUrl, "JPEG", MARGEN_MM, MARGEN_MM, dw, dh, undefined, "FAST");
     insertadas++;
   }
 

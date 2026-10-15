@@ -5,6 +5,7 @@ import { COLORS } from "../styles/tokens";
 import { procesarEscaneoAutomatico, idAleatorio } from "../utils/scanProcessing";
 import { generarPdfDePaginas, validarPdf, nombreDescarga, esPdf, leerInfoPdf } from "../utils/pdfDocumentos";
 import { api } from "../services/api";
+import { leerPaginasGuardadas, guardarPaginas, borrarPaginas } from "../utils/idbPaginas";
 
 const CAMERA_MAX_WIDTH = 1600;
 const MAX_PAGINAS = 30;
@@ -30,6 +31,21 @@ function dataUrlDesdeArchivo(file) {
   });
 }
 
+// Una miniatura liviana para mostrar en pantalla: un <img> con la foto
+// completa (1600px) obliga al navegador a mantener el bitmap decodificado
+// en memoria para CADA pagina visible, aunque se muestre chiquito en el
+// grid — con 20-30 fotos eso es memoria de sobra para que Android decida
+// matar la pestana. La imagen completa se sigue guardando igual (para el
+// PDF final); solo lo que se pinta en pantalla usa esta version chica.
+function miniaturaDesdeCanvas(canvas, maxAncho = 200) {
+  const escala = Math.min(1, maxAncho / canvas.width);
+  const mini = document.createElement("canvas");
+  mini.width = Math.max(16, Math.round(canvas.width * escala));
+  mini.height = Math.max(16, Math.round(canvas.height * escala));
+  mini.getContext("2d").drawImage(canvas, 0, 0, mini.width, mini.height);
+  return mini.toDataURL("image/jpeg", 0.6);
+}
+
 function Pantalla({ children }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 text-center" style={{ backgroundColor: "#111" }}>
@@ -51,21 +67,9 @@ function Pantalla({ children }) {
 // Android puede matar en segundo plano la pestana del navegador mientras la
 // app de Camara esta abierta (para liberar memoria); al volver, la pagina
 // se recarga desde cero y se pierde todo el estado en memoria. Para que no
-// se pierdan las paginas ya escaneadas, se guardan en sessionStorage (solo
-// mientras dura esta pestana) y se recuperan si la pagina se recarga.
-function claveAlmacenamiento(sesionId) {
-  return `escaneo-movil-paginas-${sesionId}`;
-}
-
-function leerPaginasGuardadas(sesionId) {
-  try {
-    const guardadas = sessionStorage.getItem(claveAlmacenamiento(sesionId));
-    return guardadas ? JSON.parse(guardadas) : [];
-  } catch {
-    return [];
-  }
-}
-
+// se pierdan las paginas ya escaneadas, se guardan en IndexedDB (solo
+// mientras dura esta sesion de escaneo) y se recuperan si la pagina se
+// recarga.
 export function EscaneoMovilPage() {
   const { sesionId } = useParams();
   const [valido, setValido] = useState(null); // null=verificando, true/false
@@ -73,8 +77,9 @@ export function EscaneoMovilPage() {
   const [enviando, setEnviando] = useState(false);
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState(null);
-  const [paginas, setPaginas] = useState(() => leerPaginasGuardadas(sesionId));
-  const [recuperadas] = useState(() => leerPaginasGuardadas(sesionId).length);
+  const [paginas, setPaginas] = useState([]);
+  const [recuperadas, setRecuperadas] = useState(0);
+  const [errorRespaldo, setErrorRespaldo] = useState(null);
 
   const inputRef = useRef(null);
 
@@ -84,17 +89,52 @@ export function EscaneoMovilPage() {
       .catch(() => setValido(false));
   }, [sesionId]);
 
-  // Persistir cada cambio: si Android recarga la pagina, se recuperan al
-  // volver a montar el componente (arriba, en el useState inicial).
+  // Recupera las paginas guardadas de un intento anterior (si Android mato
+  // la pestana mientras se escaneaba) al montar el componente.
   useEffect(() => {
+    let cancelado = false;
+    leerPaginasGuardadas(sesionId)
+      .then((guardadas) => {
+        if (cancelado) return;
+        if (guardadas.length) {
+          setPaginas(guardadas);
+          setRecuperadas(guardadas.length);
+        }
+      })
+      .catch((err) => {
+        if (cancelado) return;
+        setErrorRespaldo("No se pudo leer el respaldo de un intento anterior (" + (err?.message || "almacenamiento no disponible") + ").");
+      });
+    return () => { cancelado = true; };
+  }, [sesionId]);
+
+  // Cada pagina se escribe en IndexedDB de inmediato, dentro de la MISMA
+  // operacion que la crea (lee lo guardado, agrega la nueva, escribe, y
+  // solo hasta entonces se refleja en pantalla). Antes esto se hacia con un
+  // useEffect reactivo que corria un paso despues del cambio de estado —
+  // si Android mataba la pestana en ese hueco, esa foto se perdia. Y si la
+  // lectura fallaba, se trataba como "no habia nada guardado" y el
+  // siguiente guardado reescribia el respaldo completo con solo la pagina
+  // nueva, borrando las anteriores (asi se perdieron las primeras 5 en la
+  // prueba del telefono). Por eso aqui un fallo de lectura NUNCA se asume
+  // vacio: se usa lo que ya hay en pantalla como base.
+  async function persistir(calcularNuevas) {
+    let actuales = paginas;
     try {
-      if (paginas.length) sessionStorage.setItem(claveAlmacenamiento(sesionId), JSON.stringify(paginas));
-      else sessionStorage.removeItem(claveAlmacenamiento(sesionId));
-    } catch {
-      // almacenamiento lleno o no disponible: no bloquea el escaneo, solo
-      // no habria recuperacion si la pagina se recarga.
+      actuales = await leerPaginasGuardadas(sesionId);
+    } catch (err) {
+      setErrorRespaldo("No se pudo confirmar el respaldo guardado (" + (err?.message || "almacenamiento no disponible") + "); se sigue con lo que hay en pantalla. Termine y envíe pronto por si la pestaña se recarga.");
     }
-  }, [paginas, sesionId]);
+    const nuevas = calcularNuevas(actuales);
+    try {
+      await guardarPaginas(sesionId, nuevas);
+      setErrorRespaldo(null);
+    } catch (err) {
+      setErrorRespaldo("No se pudo respaldar la página en este teléfono (" + (err?.message || "almacenamiento no disponible") + "). Termine y envíe pronto para no perder el avance si la pestaña se recarga.");
+    }
+    setPaginas(nuevas);
+    return nuevas;
+  }
 
   async function escanearAutomaticamente(dataUrl) {
     if (paginas.length >= MAX_PAGINAS) {
@@ -108,7 +148,8 @@ export function EscaneoMovilPage() {
         procesarEscaneoAutomatico(dataUrl, { maxAncho: CAMERA_MAX_WIDTH }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("El procesamiento tardó demasiado; intente de nuevo con mejor luz o más cerca del documento.")), 20000)),
       ]);
-      setPaginas((p) => [...p, { id: idAleatorio(), dataUrl: canvas.toDataURL("image/jpeg", 0.85) }]);
+      const pagina = { id: idAleatorio(), dataUrl: canvas.toDataURL("image/jpeg", 0.85), miniatura: miniaturaDesdeCanvas(canvas) };
+      await persistir((actuales) => [...actuales, pagina]);
     } catch (err) {
       setError(err.message || "Error al procesar la captura.");
     } finally {
@@ -133,7 +174,7 @@ export function EscaneoMovilPage() {
       fd.append("paginas", String(totalPaginas));
       fd.append("nombre", nombre);
       await api.post(`/escaneo-movil/sesiones/${sesionId}/subir`, fd);
-      try { sessionStorage.removeItem(claveAlmacenamiento(sesionId)); } catch { /* no critico */ }
+      await borrarPaginas(sesionId);
       setEnviado(true);
     } catch (err) {
       // No se limpian las paginas ya capturadas: si el envio falla, el
@@ -174,8 +215,8 @@ export function EscaneoMovilPage() {
     }
   }
 
-  function quitarPagina(id) {
-    setPaginas((p) => p.filter((pg) => pg.id !== id));
+  async function quitarPagina(id) {
+    await persistir((actuales) => actuales.filter((pg) => pg.id !== id));
   }
 
   async function enviar() {
@@ -224,6 +265,12 @@ export function EscaneoMovilPage() {
           </div>
         )}
 
+        {errorRespaldo && (
+          <div className="rounded-lg px-3 py-2 mb-3 text-sm" style={{ backgroundColor: "#4a3a1f", color: "#ffd9a3" }}>
+            ⚠ {errorRespaldo}
+          </div>
+        )}
+
         {recuperadas > 0 && (
           <div className="rounded-lg px-3 py-2 mb-3 text-sm" style={{ backgroundColor: "#1f3a2a", color: "#a8e6b8" }}>
             Se recuperaron {recuperadas} página{recuperadas === 1 ? "" : "s"} de un intento anterior (el navegador se reinició). Puede seguir agregando o enviarlas.
@@ -255,7 +302,7 @@ export function EscaneoMovilPage() {
             <div className="grid grid-cols-4 gap-2">
               {paginas.map((pg, i) => (
                 <div key={pg.id} className="relative rounded-lg overflow-hidden">
-                  <img src={pg.dataUrl} alt={`Página ${i + 1}`} className="w-full h-20 object-cover" />
+                  <img src={pg.miniatura || pg.dataUrl} alt={`Página ${i + 1}`} className="w-full h-20 object-cover" />
                   <span className="absolute left-1 top-1 text-[10px] font-bold px-1.5 rounded" style={{ backgroundColor: COLORS.navy, color: "white" }}>{i + 1}</span>
                   <button onClick={() => quitarPagina(pg.id)} className="absolute right-1 top-1 rounded-full p-0.5" style={{ backgroundColor: "rgba(0,0,0,0.6)", color: "white" }} aria-label={`Eliminar página ${i + 1}`}>
                     <Trash2 size={11} />
