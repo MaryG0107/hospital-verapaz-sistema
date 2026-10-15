@@ -67,7 +67,7 @@ test.describe('Registro y Admisión - Navegación y UI', () => {
 
     await page.fill('[name="fechaIngreso"]', '2026-10-09');
     await page.fill('[name="horaIngreso"]', '14ab30');
-    await expect(page.locator('[name="horaIngreso"]')).toHaveValue('1430');
+    await expect(page.locator('[name="horaIngreso"]')).toHaveValue('14:30');
     await page.fill('[name="historiaClinica"]', 'HC-00123');
     await expect(page.locator('[name="historiaClinica"]')).toHaveValue('00123');
     await page.fill('[name="nombreCompleto"]', 'Paciente Prueba');
@@ -78,11 +78,11 @@ test.describe('Registro y Admisión - Navegación y UI', () => {
     await page.fill('[name="fechaNacimiento"]', '1990-03-10');
     await page.fill('[name="edad"]', '3a5');
     await expect(page.locator('[name="edad"]')).toHaveValue('35');
-    await page.fill('[name="sexo"]', 'Femenino');
+    await page.selectOption('[name="sexo"]', 'Femenino');
     await page.locator('input[name="estadoCivil"][value="S"]').check();
     await page.fill('[name="ocupacion"]', 'Comerciante');
-    await page.fill('[name="religion"]', 'Ninguna');
-    await page.fill('[name="nacionalidad"]', 'Guatemalteca');
+    await page.selectOption('[name="religion"]', 'Ninguna / Atea');
+    await page.selectOption('[name="nacionalidad"]', 'Guatemalteca');
     await page.fill('[name="dpi"]', '1234567890101');
     await page.getByRole('button', { name: 'Mostrar datos opcionales' }).click();
     await page.fill('[name="nombreConyuge"]', 'Cónyuge Prueba');

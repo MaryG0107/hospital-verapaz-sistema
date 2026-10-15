@@ -32,4 +32,12 @@ export default defineConfig({
       "/api": "http://localhost:4000",
     },
   },
+  // "vite preview" sirve el build de produccion (dist/) para probarlo
+  // localmente o en CI (pruebas E2E): necesita el mismo reenvio de /api al
+  // backend que el servidor de desarrollo, si no el login nunca funciona.
+  preview: {
+    proxy: {
+      "/api": "http://localhost:4000",
+    },
+  },
 });
