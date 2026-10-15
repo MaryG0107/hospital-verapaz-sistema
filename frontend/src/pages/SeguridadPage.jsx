@@ -33,8 +33,7 @@ export function SeguridadPage() {
         <Card>
           <div className="font-semibold text-sm mb-2">🔑 Tokens de acceso temporal</div>
           <p className="text-sm" style={{ color: "#666" }}>
-            El Administrador asigna roles, funciones y permisos de token (RF-29, RF-30, RF-32, RF-33, RF-34).
-            Duración del token: 5–15 minutos · Un solo uso. Solicítelo en el módulo de Expediente Clínico si necesita ver un diagnóstico.
+            El Administrador asigna roles y permisos de token (RF-29 a RF-34). Token: 5–15 min, un solo uso — solicítelo desde Expediente Clínico.
           </p>
         </Card>
       </div>
@@ -47,7 +46,7 @@ export function SeguridadPage() {
 function SeguridadAdmin() {
   const { data: usuarios, loading, error, reload } = useFetch("/usuarios");
 
-  const [nuevo, setNuevo] = useState({ nombre: "", correo: "", password: "", roles: [ROLES.RECEPCION], puedeAutogenerarToken: false });
+  const [nuevo, setNuevo] = useState({ nombre: "", correo: "", password: "", roles: [ROLES.RECEPCION], puedeAutogenerarToken: false, colegiado: "", especialidad: "" });
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
@@ -70,9 +69,13 @@ function SeguridadAdmin() {
     setGuardando(true);
     setMensaje(null);
     try {
-      await api.post("/usuarios", nuevo);
+      await api.post("/usuarios", {
+        ...nuevo,
+        colegiado: nuevo.roles.includes(ROLES.CONSULTA) ? (nuevo.colegiado || null) : null,
+        especialidad: nuevo.roles.includes(ROLES.CONSULTA) ? (nuevo.especialidad || null) : null,
+      });
       setMensaje({ tone: "success", texto: "Usuario creado." });
-      setNuevo({ nombre: "", correo: "", password: "", roles: [ROLES.RECEPCION], puedeAutogenerarToken: false });
+      setNuevo({ nombre: "", correo: "", password: "", roles: [ROLES.RECEPCION], puedeAutogenerarToken: false, colegiado: "", especialidad: "" });
       reload();
     } catch (err) {
       setMensaje({ tone: "error", texto: err.message });
@@ -119,7 +122,7 @@ function SeguridadAdmin() {
       {error && <Banner tone="error">{error}</Banner>}
 
       <Table
-        headers={["Usuario", "Correo", "Roles (un usuario puede tener varios)", "Autogenera token", "Estado"]}
+        headers={["Usuario", "Correo", "Roles (un usuario puede tener varios)", "Colegiado / Especialidad", "Autogenera token", "Estado"]}
         rows={loading ? [] : usuarios || []}
         emptyMessage={loading ? "Cargando…" : "Sin usuarios registrados."}
         renderRow={(u) => {
@@ -130,6 +133,34 @@ function SeguridadAdmin() {
               <td className="px-4 py-3 align-top" style={{ color: "#666" }}>{u.correo}</td>
               <td className="px-4 py-3 align-top" style={{ minWidth: 260 }}>
                 <RolesChecklist value={u.roles} onChange={(roles) => onCambiarRoles(u, roles)} />
+              </td>
+              <td className="px-4 py-3 align-top" style={{ minWidth: 150 }}>
+                {u.roles.includes(ROLES.CONSULTA) ? (
+                  <div className="flex flex-col gap-1.5">
+                    <TextInput
+                      placeholder="Colegiado…"
+                      defaultValue={u.colegiado || ""}
+                      onBlur={(e) => {
+                        if ((e.target.value || null) !== (u.colegiado || null)) {
+                          actualizarUsuario(u.id, { colegiado: e.target.value || null });
+                        }
+                      }}
+                      style={{ fontSize: 12, padding: "6px 10px" }}
+                    />
+                    <TextInput
+                      placeholder="Especialidad…"
+                      defaultValue={u.especialidad || ""}
+                      onBlur={(e) => {
+                        if ((e.target.value || null) !== (u.especialidad || null)) {
+                          actualizarUsuario(u.id, { especialidad: e.target.value || null });
+                        }
+                      }}
+                      style={{ fontSize: 12, padding: "6px 10px" }}
+                    />
+                  </div>
+                ) : (
+                  <span className="text-xs" style={{ color: "#AAA" }}>—</span>
+                )}
               </td>
               <td className="px-4 py-3 align-top">
                 <label className="flex items-center gap-2 text-xs" style={{ color: "#666" }}>
@@ -158,6 +189,16 @@ function SeguridadAdmin() {
             <FormField label="Roles (puede marcar más de uno)">
               <RolesChecklist value={nuevo.roles} onChange={(roles) => setNuevo((f) => ({ ...f, roles }))} />
             </FormField>
+            {nuevo.roles.includes(ROLES.CONSULTA) && (
+              <>
+                <FormField label="No. de colegiado">
+                  <TextInput placeholder="ej. C-12345" value={nuevo.colegiado} onChange={(e) => setNuevo((f) => ({ ...f, colegiado: e.target.value }))} />
+                </FormField>
+                <FormField label="Especialidad">
+                  <TextInput placeholder="ej. Medicina Interna" value={nuevo.especialidad} onChange={(e) => setNuevo((f) => ({ ...f, especialidad: e.target.value }))} />
+                </FormField>
+              </>
+            )}
             <label className="flex items-center gap-2 text-sm" style={{ color: "#444" }}>
               <input type="checkbox" checked={nuevo.puedeAutogenerarToken} onChange={(e) => setNuevo((f) => ({ ...f, puedeAutogenerarToken: e.target.checked }))} />
               Puede autogenerar sus propios tokens (RF-34)

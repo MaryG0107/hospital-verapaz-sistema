@@ -8,12 +8,12 @@ import { CIE10_CATALOGO } from "./data/cie10.js";
 
 const prisma = new PrismaClient();
 
-async function usuario(nombre, correo, password, roles, puedeAutogenerarToken = false) {
+async function usuario(nombre, correo, password, roles, extra = {}) {
   const passwordHash = await bcrypt.hash(password, 10);
   return prisma.usuario.upsert({
     where: { correo },
     update: {},
-    create: { nombre, correo, passwordHash, roles, puedeAutogenerarToken },
+    create: { nombre, correo, passwordHash, roles, ...extra },
   });
 }
 
@@ -23,7 +23,16 @@ async function main() {
 
   await usuario("Administrador General", adminEmail, adminPassword, [ROLES.ADMIN]);
   await usuario("Recepción / Admisión", "recepcion@hospitalverapaz.gt", "Recepcion123", [ROLES.RECEPCION]);
-  await usuario("Dra. Ana Choc", "aChoc@hospitalverapaz.gt", "Consulta123", [ROLES.CONSULTA], true); // RF-34
+  // Sprint 1/5: medicos de prueba con numero de colegiado y especialidad
+  await usuario("Dra. Ana Choc", "aChoc@hospitalverapaz.gt", "Consulta123", [ROLES.CONSULTA], {
+    puedeAutogenerarToken: true, // RF-34
+    colegiado: "C-12345",
+    especialidad: "Medicina Interna",
+  });
+  await usuario("Dr. Luis Pop", "lPop@hospitalverapaz.gt", "Consulta123", [ROLES.CONSULTA], {
+    colegiado: "C-67890",
+    especialidad: "Cirugía General",
+  });
   await usuario("Enfermería Turno Mañana", "enfermeria@hospitalverapaz.gt", "Enfermeria123", [ROLES.ENFERMERIA]);
   // ejemplo de un usuario con mas de un rol a la vez
   await usuario("Facturación", "facturacion@hospitalverapaz.gt", "Facturacion123", [ROLES.FACTURACION, ROLES.RECEPCION]);
@@ -39,6 +48,21 @@ async function main() {
   });
 
   await prisma.catalogoCie10.createMany({ data: CIE10_CATALOGO, skipDuplicates: true });
+
+  // 23/09/2026: categorias fiscales de partida para clasificar Gastos del
+  // Hospital. Son un punto de partida basado en regimenes comunes en
+  // Guatemala -- el Administrador debe confirmarlas/ajustarlas con su
+  // contador antes de usarlas para declarar, las tasas pueden cambiar.
+  await prisma.categoriaFiscal.createMany({
+    data: [
+      { nombre: "IVA general (12%)", tasa: 12 },
+      { nombre: "Pequeño Contribuyente (5%)", tasa: 5 },
+      { nombre: "ISR Régimen sobre Utilidades (25%)", tasa: 25 },
+      { nombre: "ISR Régimen Opcional Simplificado (5%)", tasa: 5 },
+      { nombre: "Sin clasificar", tasa: null },
+    ],
+    skipDuplicates: true,
+  });
 
   console.log("Seed completado.");
   console.log(`Administrador: ${adminEmail} / ${adminPassword}`);

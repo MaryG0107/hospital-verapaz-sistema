@@ -23,6 +23,27 @@ function formatoMes(mes) {
   const [y, m] = mes.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("es-GT", { month: "short", year: "2-digit" });
 }
+// El periodo llega como "2026-09" (mes), "2026-09-14" (lunes de la semana) o
+// "2026-09-20" (dia), ya calculado en la zona horaria del hospital.
+const GRANULARIDADES = [
+  { valor: "dia", texto: "Por día" },
+  { valor: "semana", texto: "Por semana" },
+  { valor: "mes", texto: "Por mes" },
+];
+const TITULO_PERIODO = { dia: "día", semana: "semana", mes: "mes" };
+
+function formatoPeriodo(periodo, granularidad) {
+  if (granularidad === "mes") return formatoMes(periodo);
+  const [y, m, d] = periodo.split("-").map(Number);
+  const corto = new Date(y, m - 1, d).toLocaleDateString("es-GT", { day: "2-digit", month: "2-digit" });
+  return granularidad === "semana" ? `Sem. ${corto}` : corto;
+}
+function etiquetaCompleta(periodo, granularidad) {
+  if (granularidad === "mes") return formatoMes(periodo);
+  const [y, m, d] = periodo.split("-").map(Number);
+  const completo = new Date(y, m - 1, d).toLocaleDateString("es-GT", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return granularidad === "semana" ? `Semana del lunes ${completo}` : completo;
+}
 function formatoQ(v) {
   return `Q${Number(v).toLocaleString()}`;
 }
@@ -49,7 +70,8 @@ export function ReportesPage() {
   const { data: financiero } = useFetch(conRango("/reportes/financiero"));
   const { data: admisiones } = useFetch(conRango("/reportes/admisiones"));
   const { data: porFormaPago } = useFetch(conRango("/reportes/facturacion-por-forma-pago"));
-  const { data: ingresosPorMes } = useFetch(conRango("/reportes/ingresos-por-mes"));
+  const [granularidad, setGranularidad] = useState("mes");
+  const { data: ingresosPorMes } = useFetch(conRango(`/reportes/ingresos-por-mes?granularidad=${granularidad}`));
   const kardexPag = usePaginatedFetch(conRango("/reportes/inventario-kardex"), { pageSize: 20 });
 
   const datosAdmisiones = (admisiones?.porCondicionEgreso || []).map((c) => ({
@@ -65,16 +87,31 @@ export function ReportesPage() {
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false);
   const [buscarInput, setBuscarInput] = useState("");
   const [buscarAuditoria, setBuscarAuditoria] = useState("");
+  const [mostrarBitacora, setMostrarBitacora] = useState(false);
+  const [buscarBitacoraInput, setBuscarBitacoraInput] = useState("");
+  const [buscarBitacora, setBuscarBitacora] = useState("");
+  const [accionBitacora, setAccionBitacora] = useState("");
 
   useEffect(() => {
     const timeout = setTimeout(() => setBuscarAuditoria(buscarInput), 300);
     return () => clearTimeout(timeout);
   }, [buscarInput]);
 
+  useEffect(() => {
+    const timeout = setTimeout(() => setBuscarBitacora(buscarBitacoraInput), 300);
+    return () => clearTimeout(timeout);
+  }, [buscarBitacoraInput]);
+
   const auditoriaPag = usePaginatedFetch(
     conRango(`/reportes/auditoria-diagnostico${buscarAuditoria ? `?buscar=${encodeURIComponent(buscarAuditoria)}` : ""}`),
     { pageSize: 20, enabled: mostrarAuditoria }
   );
+
+  // Sprint 7: bitacora general de actividad (login/logout, creaciones,
+  // actualizaciones y acciones financieras), separada de la auditoria del
+  // diagnostico confidencial.
+  const bitacoraPath = `/reportes/actividad${accionBitacora || buscarBitacora ? "?" : ""}${accionBitacora ? `accion=${accionBitacora}` : ""}${accionBitacora && buscarBitacora ? "&" : ""}${buscarBitacora ? `buscar=${encodeURIComponent(buscarBitacora)}` : ""}`;
+  const bitacoraPag = usePaginatedFetch(conRango(bitacoraPath), { pageSize: 20, enabled: mostrarBitacora });
 
   return (
     <div>
@@ -95,7 +132,7 @@ export function ReportesPage() {
         <p className="text-xs mb-2.5" style={{ color: "#888" }}>El rango aplica a todas las gráficas y tablas de esta página.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
         <Card>
           <div className="text-xs font-semibold" style={{ color: "#888" }}>INGRESOS HOSPITAL</div>
           <div className="text-2xl font-bold mt-1" style={{ color: COLORS.navy }}>Q {financiero?.ingresosHospital?.toLocaleString() ?? "—"}</div>
@@ -108,18 +145,64 @@ export function ReportesPage() {
           <div className="text-xs font-semibold" style={{ color: "#888" }}>TOTAL CONSOLIDADO</div>
           <div className="text-2xl font-bold mt-1" style={{ color: COLORS.text }}>Q {financiero?.totalConsolidado?.toLocaleString() ?? "—"}</div>
         </Card>
+        <Card>
+          <div className="text-xs font-semibold" style={{ color: "#888" }}>GASTOS DEL HOSPITAL</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: COLORS.red }}>Q {financiero?.totalGastos?.toLocaleString() ?? "—"}</div>
+        </Card>
+        <Card>
+          <div className="text-xs font-semibold" style={{ color: "#888" }}>INGRESO NETO</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: (financiero?.ingresoNeto ?? 0) >= 0 ? COLORS.navy : COLORS.red }}>Q {financiero?.ingresoNeto?.toLocaleString() ?? "—"}</div>
+        </Card>
       </div>
 
+      {financiero?.gastosPorCategoria?.length > 0 && (
+        <Card style={{ marginBottom: 16 }}>
+          <div className="font-semibold text-sm mb-1">Gastos por categoría fiscal</div>
+          <p className="text-xs mb-3" style={{ color: "#888" }}>
+            Desglose del período elegido, con el impuesto estimado de cada categoría — captura y corrección en
+            "Gastos del Hospital".
+          </p>
+          <Table
+            headers={["Categoría fiscal", "Monto", "Impuesto estimado"]}
+            rows={financiero.gastosPorCategoria}
+            renderRow={(g) => (
+              <>
+                <td className="px-4 py-3">{g.categoria}</td>
+                <td className="px-4 py-3 font-semibold">Q{g.total.toLocaleString()}</td>
+                <td className="px-4 py-3" style={{ color: "#666" }}>{g.impuestoEstimado ? `Q${g.impuestoEstimado.toLocaleString()}` : "—"}</td>
+              </>
+            )}
+          />
+        </Card>
+      )}
+
       <Card style={{ marginBottom: 16 }}>
-        <div className="font-semibold text-sm mb-1">Ingresos por mes</div>
-        <p className="text-xs mb-3" style={{ color: "#888" }}>Hospital vs. farmacia, agrupado por mes (RF-21)</p>
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+          <div>
+            <div className="font-semibold text-sm mb-1">Ingresos por {TITULO_PERIODO[granularidad]}</div>
+            <p className="text-xs" style={{ color: "#888" }}>Hospital vs. farmacia, agrupado por {TITULO_PERIODO[granularidad]} (RF-21). Solo aparecen los períodos con movimiento.</p>
+          </div>
+          <div className="flex gap-1" role="group" aria-label="Agrupar ingresos por">
+            {GRANULARIDADES.map((g) => (
+              <button
+                key={g.valor}
+                onClick={() => setGranularidad(g.valor)}
+                aria-pressed={granularidad === g.valor}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={granularidad === g.valor ? { backgroundColor: COLORS.navy, color: "white" } : { border: `1px solid ${COLORS.border}`, color: COLORS.text }}
+              >
+                {g.texto}
+              </button>
+            ))}
+          </div>
+        </div>
         {ingresosPorMes?.length ? (
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={ingresosPorMes} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={4}>
               <CartesianGrid vertical={false} stroke={COLORS.border} />
-              <XAxis dataKey="mes" tickFormatter={formatoMes} tick={tickStyle} axisLine={{ stroke: COLORS.border }} tickLine={false} />
+              <XAxis dataKey="periodo" tickFormatter={(p) => formatoPeriodo(p, granularidad)} tick={tickStyle} axisLine={{ stroke: COLORS.border }} tickLine={false} />
               <YAxis tickFormatter={formatoQ} tick={tickStyle} axisLine={false} tickLine={false} width={72} />
-              <Tooltip formatter={(v, name) => [formatoQ(v), name]} labelFormatter={formatoMes} contentStyle={tooltipStyle} cursor={{ fill: COLORS.lightBg }} />
+              <Tooltip formatter={(v, name) => [formatoQ(v), name]} labelFormatter={(p) => etiquetaCompleta(p, granularidad)} contentStyle={tooltipStyle} cursor={{ fill: COLORS.lightBg }} />
               <Legend wrapperStyle={{ fontSize: 12 }} formatter={(value) => <span style={{ color: COLORS.textMuted }}>{value}</span>} />
               <Bar dataKey="ingresosHospital" name="Hospital" fill={COLORS.navy} radius={[4, 4, 0, 0]} maxBarSize={28} />
               <Bar dataKey="ingresosFarmacia" name="Farmacia" fill={COLORS.gold} radius={[4, 4, 0, 0]} maxBarSize={28} />
@@ -228,7 +311,7 @@ export function ReportesPage() {
                       style={
                         a.accion === "registrar"
                           ? { backgroundColor: "#FBF2E1", color: COLORS.gold }
-                          : { backgroundColor: "#E6F4EC", color: COLORS.navy }
+                          : { backgroundColor: "#E5F6EE", color: COLORS.navy }
                       }
                     >
                       {a.accion === "registrar" ? "Registro / edición" : "Visualización"}
@@ -242,6 +325,67 @@ export function ReportesPage() {
               )}
             />
             <Pagination page={auditoriaPag.page} totalPages={auditoriaPag.totalPages} total={auditoriaPag.total} onChange={auditoriaPag.setPage} />
+          </div>
+        )}
+      </Card>
+
+      <Card style={{ marginTop: 16 }}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <div className="font-semibold text-sm mb-1">Bitácora general de actividad</div>
+            <p className="text-xs" style={{ color: "#888" }}>
+              Quién hizo qué y cuándo: inicios de sesión, creaciones, actualizaciones y acciones financieras de todos los módulos.
+              El rango de fechas de arriba aplica también a esta tabla.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={() => setMostrarBitacora((v) => !v)}>
+            <span className="flex items-center gap-1.5">
+              {mostrarBitacora ? <EyeOff size={15} /> : <Eye size={15} />}
+              {mostrarBitacora ? "Ocultar bitácora" : "Ver bitácora"}
+            </span>
+          </Button>
+        </div>
+
+        {mostrarBitacora && (
+          <div className="mt-4 animate-fade-in flex flex-wrap gap-3 items-end">
+            <TextInput
+              placeholder="Buscar por usuario o detalle…"
+              value={buscarBitacoraInput}
+              onChange={(e) => setBuscarBitacoraInput(e.target.value)}
+              style={{ maxWidth: 300 }}
+            />
+            <FormField label="Acción">
+              <select
+                value={accionBitacora}
+                onChange={(e) => setAccionBitacora(e.target.value)}
+                className="text-sm rounded-xl border px-3 py-2.5"
+                style={{ borderColor: COLORS.border }}
+              >
+                <option value="">Todas</option>
+                {["login", "logout", "crear_paciente", "actualizar_paciente", "crear_usuario", "actualizar_usuario",
+                  "crear_receta", "registrar_tratamiento", "generar_factura_hospital", "venta_farmacia",
+                  "entrada_inventario", "salida_uso_intrahospitalario", "registrar_visita", "subir_documento",
+                  "descargar_documento", "eliminar_documento", "registrar_gasto", "eliminar_gasto",
+                  "crear_categoria_fiscal", "actualizar_categoria_fiscal",
+                  "solicitar_reset_password", "reset_password"].map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+            </FormField>
+            <Table
+              headers={["Usuario", "Acción", "Detalle", "Fecha"]}
+              rows={bitacoraPag.loading ? [] : bitacoraPag.items}
+              emptyMessage={bitacoraPag.loading ? "Cargando…" : "Sin actividad registrada."}
+              renderRow={(l) => (
+                <>
+                  <td className="px-4 py-3 font-semibold">{l.usuario?.nombre || "—"}</td>
+                  <td className="px-4 py-3"><span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: "#E5F6EE", color: COLORS.navy }}>{l.accion}</span></td>
+                  <td className="px-4 py-3" style={{ color: "#666" }}>{l.detalle || "—"}</td>
+                  <td className="px-4 py-3" style={{ color: "#666" }}>{new Date(l.fecha).toLocaleString()}</td>
+                </>
+              )}
+            />
+            <Pagination page={bitacoraPag.page} totalPages={bitacoraPag.totalPages} total={bitacoraPag.total} onChange={bitacoraPag.setPage} />
           </div>
         )}
       </Card>
