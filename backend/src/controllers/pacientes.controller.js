@@ -11,7 +11,7 @@ import { ENCRYPTION_KEY } from "../config/env.js";
 import { registrarActividad } from "../services/actividad.service.js";
 import { leerPaginacion } from "../utils/paginacion.util.js";
 import { ROLES } from "../utils/roles.util.js";
-import { validarPdf, guardarArchivoCifrado } from "../utils/archivos.util.js";
+import { validarPdf, guardarArchivoCifrado, validarArchivo } from "../utils/archivos.util.js";
 
 const DOCUMENTOS_DIR = path.join(process.cwd(), "uploads", "documentos");
 const DOCUMENT_MAX_MB = Number(process.env.DOCUMENT_MAX_MB || 20);
@@ -22,7 +22,9 @@ const DOCUMENT_MAX_MB = Number(process.env.DOCUMENT_MAX_MB || 20);
 const CAMPOS_PACIENTE = [
   "nombreCompleto", "dpi", "direccion", "lugarNacimiento", "fechaNacimiento",
   "telefono", "edad", "sexo", "tipoSangre", "estadoCivil", "ocupacion", "religion", "nacionalidad",
-  "nombreConyuge", "nombrePadre", "nombreMadre", "contactoEmergencia", "telefonoEmergencia", "parentesco",
+  "nombreConyuge", "direccionConyuge", "telefonoConyuge", "nombrePadre", "nombreMadre",
+  "contactoEmergencia", "direccionEmergencia", "telefonoEmergencia", "parentesco",
+  "otrasHospitalizaciones", "referidoPor",
   "encargadoNombre", "encargadoTelefono",
   "referidoDe", "medicoReferenteId", "serviciosSolicitados", "impresionClinicaIngreso",
   "fechaIngreso", "fechaEgreso", "condicionEgreso",
@@ -34,8 +36,9 @@ const SELECT_LISTADO = {
   id: true, historiaClinica: true, nombreCompleto: true, dpi: true, direccion: true,
   lugarNacimiento: true, fechaNacimiento: true, telefono: true, edad: true, sexo: true,
   tipoSangre: true, estadoCivil: true, ocupacion: true, religion: true, nacionalidad: true,
-  nombreConyuge: true, nombrePadre: true, nombreMadre: true,
-  contactoEmergencia: true, telefonoEmergencia: true, parentesco: true,
+  nombreConyuge: true, direccionConyuge: true, telefonoConyuge: true, nombrePadre: true, nombreMadre: true,
+  contactoEmergencia: true, direccionEmergencia: true, telefonoEmergencia: true, parentesco: true,
+  otrasHospitalizaciones: true, referidoPor: true,
   encargadoNombre: true, encargadoTelefono: true,
   referidoDe: true, medicoReferenteId: true, serviciosSolicitados: true,
   impresionClinicaIngreso: true, fechaIngreso: true, fechaEgreso: true, condicionEgreso: true,
@@ -43,7 +46,10 @@ const SELECT_LISTADO = {
 };
 
 // Campos clinicos de egreso que viajan en el payload cifrado
-const CAMPOS_EGRESO_CLINICO = ["diagnosticoEgreso", "complicaciones", "operaciones", "autopsia", "causaMuerte"];
+const CAMPOS_EGRESO_CLINICO = [
+  "diagnosticoEgreso", "complicaciones", "operaciones", "autopsia", "causaMuerte",
+  "diagnosticosEgreso", "complicacionesEgreso", "operacionesLista",
+];
 
 const CONDICIONES_FALLECIMIENTO = ["fallecido_antes_48", "fallecido_despues_48"];
 
@@ -75,23 +81,39 @@ export function validarPaciente(body, { esEdicion = false } = {}) {
   if (esEdicion) {
     if (body.nombreCompleto !== undefined && !String(body.nombreCompleto ?? "").trim()) return "El nombre no puede quedar vacío";
   } else {
-    if (!body.nombreCompleto?.trim()) return "nombreCompleto es requerido";
-    if (!body.dpi?.trim()) return "dpi es requerido";
+    const requeridos = [
+      ["fechaIngreso", "fecha de ingreso"], ["historiaClinica", "historia clínica"],
+      ["nombreCompleto", "nombre completo"], ["direccion", "dirección"], ["telefono", "teléfono"],
+      ["lugarNacimiento", "lugar de nacimiento"], ["fechaNacimiento", "fecha de nacimiento"],
+      ["edad", "edad"], ["sexo", "sexo"], ["estadoCivil", "estado civil"],
+      ["ocupacion", "ocupación"], ["religion", "religión"], ["nacionalidad", "nacionalidad"], ["dpi", "DPI"],
+    ];
+    for (const [campo, etiqueta] of requeridos) {
+      if (body[campo] == null || String(body[campo]).trim() === "") return `${etiqueta} es requerido`;
+    }
+    if (!/^\d{1,40}$/.test(String(body.historiaClinica).trim())) return "La historia clínica debe contener solo números (máximo 40)";
+    if (!/^\d{13}$/.test(String(body.dpi).trim())) return "El DPI debe contener 13 dígitos";
+    if (!Number.isInteger(Number(body.edad)) || Number(body.edad) < 0 || Number(body.edad) > 130) return "La edad debe ser un número entero entre 0 y 130 años";
+    if (!["S", "C", "U", "D", "V"].includes(body.estadoCivil)) return "Seleccione un código válido para el estado civil";
+    if (typeof body.fechaIngreso !== "string" || !/T\d{2}:\d{2}/.test(body.fechaIngreso)) return "La hora de ingreso es requerida";
+    for (const campo of ["fechaIngreso", "fechaNacimiento"]) {
+      if (!Number.isFinite(new Date(body[campo]).getTime())) return `La ${campo === "fechaIngreso" ? "fecha de ingreso" : "fecha de nacimiento"} no es válida`;
+    }
   }
   if (body.dpi != null && body.dpi !== "" && !/^\d{13}$/.test(String(body.dpi).trim())) {
     return "El DPI debe tener 13 dígitos";
   }
-  if (body.telefono != null && body.telefono !== "" && !/^\d{8}$/.test(String(body.telefono).trim())) {
-    return "El teléfono debe tener 8 dígitos";
+  const telefonos = [
+    ["telefono", "El teléfono"], ["telefonoConyuge", "El teléfono del cónyuge"],
+    ["telefonoEmergencia", "El teléfono de emergencia"], ["encargadoTelefono", "El teléfono del encargado"],
+  ];
+  for (const [campo, etiqueta] of telefonos) {
+    if (body[campo] != null && body[campo] !== "" && !/^\d{8}$/.test(String(body[campo]).trim())) {
+      return `${etiqueta} debe tener 8 dígitos`;
+    }
   }
-  if (body.telefonoEmergencia != null && body.telefonoEmergencia !== "" && !/^\d{8}$/.test(String(body.telefonoEmergencia).trim())) {
-    return "El teléfono de emergencia debe tener 8 dígitos";
-  }
-  if (body.encargadoTelefono != null && body.encargadoTelefono !== "" && !/^\d{8}$/.test(String(body.encargadoTelefono).trim())) {
-    return "El teléfono del encargado debe tener 8 dígitos";
-  }
-  if (body.edad != null && body.edad !== "" && (body.edad < 0 || body.edad > 130)) {
-    return "La edad debe estar entre 0 y 130 años";
+  if (body.edad != null && body.edad !== "" && (!Number.isInteger(Number(body.edad)) || Number(body.edad) < 0 || Number(body.edad) > 130)) {
+    return "La edad debe ser un entero entre 0 y 130 años";
   }
   return null;
 }
@@ -100,11 +122,55 @@ export function validarPaciente(body, { esEdicion = false } = {}) {
 // vienen deben tener formato valido (el recien nacido puede no tener DPI/CUI).
 export function validarMaternidad(m) {
   if (!m) return null;
+  if (m.numeroHijo != null && m.numeroHijo !== "" && (!Number.isInteger(Number(m.numeroHijo)) || Number(m.numeroHijo) < 1)) {
+    return "El número de hijo debe ser un entero mayor que cero";
+  }
+  if (m.fecha && !Number.isFinite(new Date(m.fecha).getTime())) return "La fecha de nacimiento del bebé no es válida";
   if (m.padreDpi != null && m.padreDpi !== "" && !/^\d{13}$/.test(String(m.padreDpi).trim())) {
     return "El DPI del padre debe tener 13 dígitos";
   }
   if (m.padreTelefono != null && m.padreTelefono !== "" && !/^\d{8}$/.test(String(m.padreTelefono).trim())) {
     return "El teléfono del padre debe tener 8 dígitos";
+  }
+  if (m.hora != null && m.hora !== "" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(m.hora))) {
+    return "La hora de nacimiento debe tener formato HH:MM";
+  }
+  if (m.autopsiaBebe === true && (!String(m.causaMuerteBebe || "").trim() || !m.fechaMuerteBebe)) {
+    return "Si se realizó autopsia al bebé, indique la causa y la fecha de muerte";
+  }
+  if (m.fechaMuerteBebe && !Number.isFinite(new Date(m.fechaMuerteBebe).getTime())) {
+    return "La fecha de muerte del bebé no es válida";
+  }
+  return null;
+}
+
+function tomarCamposMaternidad(m) {
+  return {
+    numeroHijo: m.numeroHijo == null || m.numeroHijo === "" ? null : Number(m.numeroHijo),
+    fecha: m.fecha ? new Date(m.fecha) : m.fecha === null ? null : undefined,
+    hora: m.hora,
+    sexo: m.sexo,
+    condicionEgresoBebe: m.condicionEgresoBebe,
+    autopsiaBebe: m.autopsiaBebe,
+    causaMuerteBebe: m.causaMuerteBebe,
+    fechaMuerteBebe: m.fechaMuerteBebe ? new Date(m.fechaMuerteBebe) : m.fechaMuerteBebe === null ? null : undefined,
+    bebeNombre: m.bebeNombre,
+    padreNombre: m.padreNombre,
+    padreDpi: m.padreDpi,
+    padreTelefono: m.padreTelefono,
+  };
+}
+
+export function normalizarObjetosMultipart(body) {
+  for (const campo of ["egresoClinico", "maternidad"]) {
+    if (typeof body[campo] !== "string") continue;
+    try {
+      const valor = JSON.parse(body[campo]);
+      if (!valor || typeof valor !== "object" || Array.isArray(valor)) throw new Error();
+      body[campo] = valor;
+    } catch {
+      return `El campo ${campo} no contiene un objeto JSON válido`;
+    }
   }
   return null;
 }
@@ -155,6 +221,14 @@ export function tomarEgresoClinico(body) {
 // Autopsia y causa de muerte solo aplican a condiciones de fallecimiento
 export function validarEgresoClinico(payload, condicionEfectiva) {
   if (!payload) return null;
+  for (const campo of ["diagnosticosEgreso", "complicacionesEgreso"]) {
+    if (payload[campo] !== undefined && (!Array.isArray(payload[campo]) || payload[campo].some((item) => !item || typeof item.descripcion !== "string" || typeof item.codigo !== "string"))) {
+      return `La lista ${campo} debe contener descripciones y códigos de texto`;
+    }
+  }
+  if (payload.operacionesLista !== undefined && (!Array.isArray(payload.operacionesLista) || payload.operacionesLista.some((item) => typeof item !== "string"))) {
+    return "La lista de operaciones debe contener texto";
+  }
   const marcaFallecimiento = (payload.autopsia != null && payload.autopsia !== "") || payload.causaMuerte;
   if (marcaFallecimiento && !CONDICIONES_FALLECIMIENTO.includes(condicionEfectiva)) {
     return "Autopsia y causa de muerte solo aplican a condiciones de egreso de fallecimiento";
@@ -244,7 +318,7 @@ export async function listar(req, res) {
 export async function obtenerUno(req, res) {
   const paciente = await prisma.paciente.findUnique({
     where: { id: Number(req.params.id) },
-    include: { maternidad: true, medicoReferente: true, egresoClinico: true },
+    include: { maternidad: true, medicoReferente: true, egresoClinico: true, ingresos: { orderBy: { fechaIngreso: "desc" } } },
   });
   if (!paciente) return res.status(404).json({ error: "Paciente no encontrado" });
 
@@ -265,7 +339,9 @@ export async function obtenerUno(req, res) {
 // en ambos casos es este unico endpoint el que registra todo junto, para
 // nunca dejar un documento guardado sin su paciente o viceversa.
 export async function crear(req, res) {
-  const errorValidacion = validarPaciente(req.body);
+  const errorJson = normalizarObjetosMultipart(req.body);
+  if (errorJson) return res.status(400).json({ error: errorJson });
+  const errorValidacion = validarPaciente(req.body) || validarMaternidad(req.body.maternidad);
   if (errorValidacion) return res.status(400).json({ error: errorValidacion });
 
   const { dpi } = req.body;
@@ -281,9 +357,7 @@ export async function crear(req, res) {
   const errorEgreso = validarEgresoClinico(payloadEgreso, req.body.condicionEgreso);
   if (errorEgreso) return res.status(422).json({ error: errorEgreso });
 
-  // Dev-Mari: la hoja fisica ya trae una "Historia Clinica" escrita a mano.
-  // Si se captura (al escanear un expediente existente), se respeta ese
-  // numero tal cual; solo si viene vacia el sistema genera una (RF-03).
+  // La historia clínica ahora es obligatoria y se captura numéricamente.
   const historiaManual = typeof req.body.historiaClinica === "string" ? req.body.historiaClinica.trim() : "";
   if (historiaManual) {
     if (historiaManual.length > 40) {
@@ -297,9 +371,15 @@ export async function crear(req, res) {
 
   // El PDF se valida antes de tocar la base de datos: si no es un PDF
   // valido, no tiene sentido crear el paciente sin su respaldo escaneado.
-  if (req.file) {
-    const errorPdf = validarPdf(req.file);
+  const documento = req.files?.documento?.[0] || null;
+  const adjuntos = req.files?.adjuntos || [];
+  if (documento) {
+    const errorPdf = validarPdf(documento);
     if (errorPdf) return res.status(422).json({ error: errorPdf });
+  }
+  for (const archivo of adjuntos) {
+    const errorAdjunto = validarArchivo(archivo);
+    if (errorAdjunto) return res.status(422).json({ error: `Adjunto "${archivo.originalname}": ${errorAdjunto}` });
   }
 
   const paciente = await prisma.$transaction(async (tx) => {
@@ -318,11 +398,11 @@ export async function crear(req, res) {
       const { encrypted, iv, authTag } = encrypt(JSON.stringify(payloadEgreso), ENCRYPTION_KEY);
       await tx.egresoClinico.create({ data: { pacienteId: creado.id, textoCifrado: encrypted, iv, authTag } });
     }
-    if (req.file) {
-      const checksum = crypto.createHash("sha256").update(req.file.buffer).digest("hex");
-      const nombreArchivo = guardarArchivoCifrado(req.file.buffer, DOCUMENTOS_DIR, ENCRYPTION_KEY);
+    if (documento) {
+      const checksum = crypto.createHash("sha256").update(documento.buffer).digest("hex");
+      const nombreArchivo = guardarArchivoCifrado(documento.buffer, DOCUMENTOS_DIR, ENCRYPTION_KEY);
       const nombreOriginal = path
-        .basename(req.body.nombreDocumento || req.file.originalname || "expediente.pdf")
+        .basename(req.body.nombreDocumento || documento.originalname || "expediente.pdf")
         .replace(/[^\w.\-() ]/g, "_");
       await tx.documentoPaciente.create({
         data: {
@@ -330,12 +410,50 @@ export async function crear(req, res) {
           nombreOriginal,
           nombreArchivo,
           mimeType: "application/pdf",
-          tamano: req.file.size,
+          tamano: documento.size,
           checksum,
           paginas: Number(req.body.paginas) || 1,
           tipoDocumental: "expediente_admision",
           fechaDocumentoOriginal: req.body.fechaDocumentoOriginal ? new Date(req.body.fechaDocumentoOriginal) : null,
           registradoPor: req.user.id,
+        },
+      });
+    }
+    for (const archivo of adjuntos) {
+      const checksum = crypto.createHash("sha256").update(archivo.buffer).digest("hex");
+      const nombreArchivo = guardarArchivoCifrado(archivo.buffer, DOCUMENTOS_DIR, ENCRYPTION_KEY);
+      const nombreOriginal = path.basename(archivo.originalname || "resultado_clinico").replace(/[^\w.\-() ]/g, "_");
+      await tx.documentoPaciente.create({
+        data: {
+          pacienteId: creado.id,
+          nombreOriginal,
+          nombreArchivo,
+          mimeType: archivo.mimetype,
+          tamano: archivo.size,
+          checksum,
+          paginas: 1,
+          tipoDocumental: "resultado_clinico",
+          registradoPor: req.user.id,
+        },
+      });
+    }
+    if (req.body.maternidad) {
+      await tx.registroMaternidad.create({
+        data: { pacienteId: creado.id, ...tomarCamposMaternidad(req.body.maternidad) },
+      });
+    }
+    // El primer registro del paciente es tambien su primer ingreso: se crea
+    // la fila de Ingreso para que el historial de admisiones quede completo.
+    const fechaPrimerIngreso = req.body.fechaIngreso ? new Date(req.body.fechaIngreso) : null;
+    if (fechaPrimerIngreso && Number.isFinite(fechaPrimerIngreso.getTime())) {
+      await tx.ingreso.create({
+        data: {
+          pacienteId: creado.id,
+          fechaIngreso: fechaPrimerIngreso,
+          impresionClinicaIngreso: req.body.impresionClinicaIngreso || null,
+          serviciosSolicitados: req.body.serviciosSolicitados || null,
+          referidoDe: req.body.referidoDe || null,
+          referidoPor: req.body.referidoPor || null,
         },
       });
     }
@@ -345,7 +463,7 @@ export async function crear(req, res) {
   await registrarActividad(
     req.user.id,
     "crear_paciente",
-    `${paciente.nombreCompleto} (${paciente.historiaClinica})${req.file ? " + expediente escaneado" : ""}`
+    `${paciente.nombreCompleto} (${paciente.historiaClinica})${documento ? " + expediente escaneado" : ""}`
   );
   res.status(201).json(paciente);
 }
@@ -396,18 +514,7 @@ export async function actualizar(req, res) {
       }
 
       if (req.body.maternidad) {
-        const m = req.body.maternidad;
-        const datosMaternidad = {
-          numeroHijo: m.numeroHijo,
-          fecha: m.fecha ? new Date(m.fecha) : undefined,
-          hora: m.hora,
-          sexo: m.sexo,
-          condicionEgresoBebe: m.condicionEgresoBebe,
-          bebeNombre: m.bebeNombre,
-          padreNombre: m.padreNombre,
-          padreDpi: m.padreDpi,
-          padreTelefono: m.padreTelefono,
-        };
+        const datosMaternidad = tomarCamposMaternidad(req.body.maternidad);
         await tx.registroMaternidad.upsert({
           where: { pacienteId: id },
           create: { pacienteId: id, ...datosMaternidad },
@@ -426,4 +533,47 @@ export async function actualizar(req, res) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     throw err;
   }
+}
+
+// Admisiones de un paciente: una identidad (nombre, DPI, demograficos) puede
+// volver a ingresar varias veces. Cada ingreso tiene su propia fecha/hora e
+// impresion clinica de admision, y agrupa los diagnosticos de esa admision.
+export function validarIngreso(body) {
+  if (!body.fechaIngreso || !Number.isFinite(new Date(body.fechaIngreso).getTime())) {
+    return "La fecha de ingreso es requerida y debe ser válida";
+  }
+  return null;
+}
+
+export async function listarIngresos(req, res) {
+  const pacienteId = Number(req.params.id);
+  const paciente = await prisma.paciente.findUnique({ where: { id: pacienteId }, select: { id: true } });
+  if (!paciente) return res.status(404).json({ error: "Paciente no encontrado" });
+  const ingresos = await prisma.ingreso.findMany({ where: { pacienteId }, orderBy: { fechaIngreso: "desc" } });
+  res.json(ingresos);
+}
+
+export async function crearIngreso(req, res) {
+  const pacienteId = Number(req.params.id);
+  const paciente = await prisma.paciente.findUnique({
+    where: { id: pacienteId },
+    select: { id: true, nombreCompleto: true, historiaClinica: true },
+  });
+  if (!paciente) return res.status(404).json({ error: "Paciente no encontrado" });
+
+  const errorValidacion = validarIngreso(req.body);
+  if (errorValidacion) return res.status(400).json({ error: errorValidacion });
+
+  const ingreso = await prisma.ingreso.create({
+    data: {
+      pacienteId,
+      fechaIngreso: new Date(req.body.fechaIngreso),
+      impresionClinicaIngreso: req.body.impresionClinicaIngreso || null,
+      serviciosSolicitados: req.body.serviciosSolicitados || null,
+      referidoDe: req.body.referidoDe || null,
+      referidoPor: req.body.referidoPor || null,
+    },
+  });
+  await registrarActividad(req.user.id, "crear_ingreso", `${paciente.nombreCompleto} (${paciente.historiaClinica})`);
+  res.status(201).json(ingreso);
 }
