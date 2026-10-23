@@ -2,6 +2,7 @@ import React from "react";
 import { Routes, Route, Navigate, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
+import { puedeVerModulo } from "./utils/roles";
 import { LoginPage } from "./pages/LoginPage";
 import { RecuperarPasswordPage } from "./pages/RecuperarPasswordPage";
 import { CambiarPasswordPage } from "./pages/CambiarPasswordPage";
@@ -13,6 +14,8 @@ import { ReferidosPage } from "./pages/ReferidosPage";
 import { FinancieraPage } from "./pages/FinancieraPage";
 import { GastosPage } from "./pages/GastosPage";
 import { FarmaciaPage } from "./pages/FarmaciaPage";
+// No esta en el menu lateral a proposito (ver utils/roles.js), pero la
+// ruta y la pagina se conservan: ocultar no es lo mismo que eliminar.
 import { BitacoraPage } from "./pages/BitacoraPage";
 import { SeguridadPage } from "./pages/SeguridadPage";
 import { ReportesPage } from "./pages/ReportesPage";
@@ -31,6 +34,31 @@ function ConPacienteDeUrl({ Page }) {
 function Redirigir({ a }) {
   const location = useLocation();
   return <Navigate to={`${a}${location.search}`} replace />;
+}
+
+// Bloquea el acceso directo por URL a modulos que el rol no puede ver
+// (por ejemplo, una secretaria escribiendo /financiera a mano). El menu ya
+// los oculta; esto cierra la puerta tambien en la ruta.
+function ModuloProtegido({ modulo, children }) {
+  const { usuario } = useAuth();
+  if (!puedeVerModulo(usuario, modulo)) {
+    // Si ni siquiera puede ver Registro (usuario sin roles), no redirigimos
+    // a /registro para no entrar en un bucle: mostramos el aviso.
+    if (modulo === "registro") {
+      return (
+        <div className="p-6">
+          <div className="rounded-xl p-5 bg-white" style={{ border: "1px solid #E3E6EC" }}>
+            <div className="font-semibold text-sm mb-1">Sin módulos asignados</div>
+            <p className="text-sm" style={{ color: "#666" }}>
+              Su usuario no tiene permisos para usar el sistema. Solicite al Administrador que le asigne un rol.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return <Navigate to="/registro" replace />;
+  }
+  return children;
 }
 
 export default function App() {
@@ -59,19 +87,19 @@ export default function App() {
     <Layout usuario={usuario} onLogout={logout}>
       <Routes>
         <Route path="/" element={<Navigate to="/registro" replace />} />
-        <Route path="/registro" element={<RegistroPage onVerExpediente={irAExpediente} />} />
-        <Route path="/expediente" element={<ConPacienteDeUrl Page={ExpedientePage} />} />
-        <Route path="/documentos" element={<ConPacienteDeUrl Page={DocumentosPage} />} />
+        <Route path="/registro" element={<ModuloProtegido modulo="registro"><RegistroPage onVerExpediente={irAExpediente} /></ModuloProtegido>} />
+        <Route path="/expediente" element={<ModuloProtegido modulo="expediente"><ConPacienteDeUrl Page={ExpedientePage} /></ModuloProtegido>} />
+        <Route path="/documentos" element={<ModuloProtegido modulo="documentos"><ConPacienteDeUrl Page={DocumentosPage} /></ModuloProtegido>} />
         {/* "Anexos" se fusiono con "Documentos escaneados" el 23/09/2026; se conserva el enlace viejo por si quedo guardado en algun lado */}
         <Route path="/anexos" element={<Redirigir a="/documentos" />} />
-        <Route path="/tratamiento" element={<ConPacienteDeUrl Page={TratamientoPage} />} />
-        <Route path="/referidos" element={<ReferidosPage />} />
-        <Route path="/financiera" element={<FinancieraPage />} />
-        <Route path="/gastos" element={<GastosPage />} />
-        <Route path="/farmacia" element={<FarmaciaPage />} />
-        <Route path="/bitacora" element={<ConPacienteDeUrl Page={BitacoraPage} />} />
-        <Route path="/seguridad" element={<SeguridadPage />} />
-        <Route path="/reportes" element={<ReportesPage />} />
+        <Route path="/tratamiento" element={<ModuloProtegido modulo="tratamiento"><ConPacienteDeUrl Page={TratamientoPage} /></ModuloProtegido>} />
+        <Route path="/referidos" element={<ModuloProtegido modulo="referidos"><ReferidosPage /></ModuloProtegido>} />
+        <Route path="/financiera" element={<ModuloProtegido modulo="financiera"><FinancieraPage /></ModuloProtegido>} />
+        <Route path="/gastos" element={<ModuloProtegido modulo="gastos"><GastosPage /></ModuloProtegido>} />
+        <Route path="/farmacia" element={<ModuloProtegido modulo="farmacia"><FarmaciaPage /></ModuloProtegido>} />
+        <Route path="/bitacora" element={<ModuloProtegido modulo="bitacora"><ConPacienteDeUrl Page={BitacoraPage} /></ModuloProtegido>} />
+        <Route path="/seguridad" element={<ModuloProtegido modulo="seguridad"><SeguridadPage /></ModuloProtegido>} />
+        <Route path="/reportes" element={<ModuloProtegido modulo="reportes"><ReportesPage /></ModuloProtegido>} />
         <Route path="*" element={<Navigate to="/registro" replace />} />
       </Routes>
     </Layout>

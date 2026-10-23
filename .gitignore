@@ -8,3 +8,7 @@ frontend/.cert/*.pem
 frontend/.cert/*.cnf
 frontend/playwright-report/
 frontend/test-results/
+
+# Manuales de usuario/tecnico: se mantienen solo en local, no se suben a git.
+docs/manual-usuario.md
+docs/manual-tecnico.md

@@ -19,6 +19,12 @@ function limpiarExpiradas() {
   }
 }
 
+// Antes solo se limpiaba de forma reactiva (al crear o consultar una
+// sesion): una sesion abandonada (nadie la completa ni la cancela, y nadie
+// mas vuelve a llamar crear/info) se quedaba en memoria con su PDF completo
+// indefinidamente. Este barrido periodico la limpia aunque nadie la toque.
+setInterval(limpiarExpiradas, 5 * 60 * 1000).unref();
+
 // --- Lado computadora (autenticado) ---
 
 export function crear(req, res) {
@@ -64,6 +70,7 @@ export function obtenerPdf(req, res) {
 
 export function cancelar(req, res) {
   const s = obtenerPropia(req);
+  if (s === null) return res.status(404).json({ error: "Sesión no encontrada o expirada" });
   if (s === undefined) return res.status(403).json({ error: "No tiene acceso a esta sesión" });
   sesiones.delete(req.params.id);
   res.json({ ok: true });

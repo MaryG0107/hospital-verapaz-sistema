@@ -48,7 +48,7 @@ export const uploadDocumento = multer({
 const SELECT_METADATOS = {
   id: true, nombreOriginal: true, mimeType: true, tamano: true,
   paginas: true, tipoDocumental: true, checksum: true, creadoEn: true,
-  fechaDocumentoOriginal: true,
+  fechaDocumentoOriginal: true, ingresoId: true,
   registradoPor: true, registrador: { select: { nombre: true } },
 };
 
@@ -80,12 +80,27 @@ export async function subir(req, res) {
     return res.status(413).json({ error: `El archivo excede el máximo de ${DOCUMENT_MAX_MB} MB` });
   }
 
+  // Admision a la que pertenece el escaneo (opcional). Si viene, debe ser una
+  // admision del mismo paciente: si no, el documento quedaria colgado de otro
+  // expediente. Se valida ANTES de escribir el binario en disco, para no
+  // dejar un archivo cifrado huerfano si el ingreso no es valido.
+  let ingresoId = null;
+  if (req.body.ingresoId) {
+    const ingreso = await prisma.ingreso.findFirst({
+      where: { id: Number(req.body.ingresoId), pacienteId },
+      select: { id: true },
+    });
+    if (!ingreso) return res.status(404).json({ error: "El ingreso indicado no pertenece a este paciente" });
+    ingresoId = ingreso.id;
+  }
+
   const checksum = crypto.createHash("sha256").update(file.buffer).digest("hex");
-  const nombreArchivo = guardarArchivoCifrado(file.buffer, DOCUMENTOS_DIR, process.env.ENCRYPTION_KEY);
+  const nombreArchivo = await guardarArchivoCifrado(file.buffer, DOCUMENTOS_DIR, process.env.ENCRYPTION_KEY);
 
   const documento = await prisma.documentoPaciente.create({
     data: {
       pacienteId,
+      ingresoId,
       nombreOriginal,
       nombreArchivo,
       mimeType: file.mimetype,

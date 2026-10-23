@@ -62,7 +62,7 @@ async function main() {
     try {
       const ruta = path.join(ANEXOS_DIR, anexo.nombreArchivo);
       const original = leerArchivoCifrado(ruta, ENCRYPTION_KEY);
-      const nombreArchivo = guardarArchivoCifrado(original, DOCUMENTOS_DIR, ENCRYPTION_KEY);
+      const nombreArchivo = await guardarArchivoCifrado(original, DOCUMENTOS_DIR, ENCRYPTION_KEY);
 
       await prisma.documentoPaciente.create({
         data: {
