@@ -9,8 +9,13 @@ export function Button({ children, onClick, variant = "primary", type = "button"
         type={type}
         onClick={onClick}
         disabled={disabled}
-        className={base + " shadow-soft hover:shadow-lifted hover:-translate-y-0.5 disabled:hover:translate-y-0 disabled:hover:shadow-soft"}
-        style={{ backgroundColor: COLORS.navy, color: "white", opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
+        className={base + " btn-shine shadow-soft hover:shadow-lifted hover:-translate-y-1 hover:scale-[1.02] disabled:hover:translate-y-0 disabled:hover:scale-100 disabled:hover:shadow-soft"}
+        style={{
+          background: `linear-gradient(135deg, ${COLORS.navy}, ${COLORS.navyLight})`,
+          color: "white",
+          opacity: disabled ? 0.6 : 1,
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
       >
         {children}
       </button>
@@ -21,7 +26,7 @@ export function Button({ children, onClick, variant = "primary", type = "button"
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={base + " border hover:bg-gray-50"}
+      className={base + " border shadow-soft hover:shadow-card hover:-translate-y-0.5 hover:border-navy disabled:hover:translate-y-0 disabled:hover:shadow-soft"}
       style={{ borderColor: COLORS.border, color: COLORS.text, backgroundColor: "white", opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
     >
       {children}

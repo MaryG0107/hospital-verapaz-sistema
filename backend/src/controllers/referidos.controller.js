@@ -20,13 +20,16 @@ export async function obtenerUno(req, res) {
   res.json(medico);
 }
 
-// RF-16: registrar medico referente con su comision
+// RF-16: registrar medico referente; la comision es opcional (hoy no se usa
+// en facturacion/reportes, ver RegistroPage/ReferidosPage).
 export async function crear(req, res) {
   const { nombre, especialidad, comisionQ } = req.body;
-  if (!nombre || comisionQ === undefined) {
-    return res.status(400).json({ error: "nombre y comisionQ son requeridos" });
+  if (!nombre) {
+    return res.status(400).json({ error: "nombre es requerido" });
   }
-  const medico = await prisma.medicoReferente.create({ data: { nombre, especialidad, comisionQ } });
+  const medico = await prisma.medicoReferente.create({
+    data: { nombre, especialidad, comisionQ: comisionQ === undefined || comisionQ === "" ? null : comisionQ },
+  });
   await registrarActividad(req.user.id, "crear_referido", nombre);
   res.status(201).json(medico);
 }
@@ -36,7 +39,7 @@ export async function actualizar(req, res) {
   try {
     const medico = await prisma.medicoReferente.update({
       where: { id: Number(req.params.id) },
-      data: { nombre, especialidad, comisionQ },
+      data: { nombre, especialidad, comisionQ: comisionQ === undefined || comisionQ === "" ? null : comisionQ },
     });
     res.json(medico);
   } catch (err) {

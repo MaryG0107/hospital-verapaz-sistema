@@ -36,3 +36,28 @@ export function fechaHoraLocal(valor) {
   const d = valida(valor);
   return d ? `${d.toLocaleDateString("es-GT", FORMATO_DIA)} ${d.toLocaleTimeString("es-GT", FORMATO_HORA)}` : null;
 }
+
+// Fecha de hoy en hora local, como "AAAA-MM-DD" (para precargar un
+// <input type="date">). No usa toISOString() porque esa es la fecha en
+// UTC: en la tarde/noche de Guatemala (UTC-6) ya seria el dia siguiente.
+export function hoyISO() {
+  const hoy = new Date();
+  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+  const dia = String(hoy.getDate()).padStart(2, "0");
+  return `${hoy.getFullYear()}-${mes}-${dia}`;
+}
+
+// Edad en años cumplidos a partir de una fecha de nacimiento "AAAA-MM-DD"
+// (fecha de solo dia). Compara los numeros de dia/mes/año directamente, sin
+// pasar por Date/UTC, para no arrastrar el mismo corrimiento de un dia que
+// documenta fechaDia() arriba.
+export function calcularEdad(fechaNacimientoStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(fechaNacimientoStr || "");
+  if (!m) return null;
+  const anio = Number(m[1]), mes = Number(m[2]), dia = Number(m[3]);
+  const hoy = new Date();
+  const anioHoy = hoy.getFullYear(), mesHoy = hoy.getMonth() + 1, diaHoy = hoy.getDate();
+  let edad = anioHoy - anio;
+  if (mesHoy < mes || (mesHoy === mes && diaHoy < dia)) edad--;
+  return edad >= 0 && edad <= 130 ? edad : null;
+}

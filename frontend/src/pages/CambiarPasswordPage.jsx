@@ -72,7 +72,7 @@ export function CambiarPasswordPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all duration-150 focus:border-navy focus:ring-2 focus:shadow-soft"
-                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(0, 134, 67, 0.18)" }}
+                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(47, 139, 99, 0.18)" }}
                 />
               </div>
             </div>
@@ -88,7 +88,7 @@ export function CambiarPasswordPage() {
                   onChange={(e) => setConfirmacion(e.target.value)}
                   placeholder="••••••••"
                   className="w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all duration-150 focus:border-navy focus:ring-2 focus:shadow-soft"
-                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(0, 134, 67, 0.18)" }}
+                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(47, 139, 99, 0.18)" }}
                 />
               </div>
             </div>

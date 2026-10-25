@@ -117,6 +117,15 @@ export function validarPaciente(body, { esEdicion = false } = {}) {
   if (body.edad != null && body.edad !== "" && (!Number.isInteger(Number(body.edad)) || Number(body.edad) < 0 || Number(body.edad) > 130)) {
     return "La edad debe ser un entero entre 0 y 130 años";
   }
+  if (body.nombreCompleto != null && body.nombreCompleto !== "" && !/^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s'-]+$/.test(String(body.nombreCompleto).trim())) {
+    return "El nombre completo solo puede contener letras";
+  }
+  if (body.fechaNacimiento != null && body.fechaNacimiento !== "") {
+    const fn = new Date(body.fechaNacimiento);
+    if (Number.isFinite(fn.getTime()) && fn.getTime() > Date.now()) {
+      return "La fecha de nacimiento no puede ser posterior a hoy";
+    }
+  }
   return null;
 }
 

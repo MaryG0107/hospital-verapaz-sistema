@@ -396,7 +396,7 @@ model MedicoReferente {
   id           Int      @id @default(autoincrement())
   nombre       String
   especialidad String?
-  comisionQ    Decimal  @db.Decimal(10, 2)
+  comisionQ    Decimal? @db.Decimal(10, 2) // opcional: no se usa aun en facturacion/reportes
   creadoEn     DateTime @default(now())
 
   pacientesReferidos Paciente[]

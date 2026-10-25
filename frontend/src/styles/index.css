@@ -86,6 +86,7 @@ body {
   animation: heartbeat 2.4s ease-in-out infinite;
 }
 
+<<<<<<< Updated upstream
 /* El logo del hospital da un giro completo (360) al hacer clic para activar
    o desactivar el modo restringido. Se remonta la imagen (key) para reiniciar
    la animacion en cada clic. */
@@ -95,6 +96,80 @@ body {
 }
 .animate-giro-total {
   animation: giro-total 0.7s ease-in-out;
+=======
+/* Menu lateral (y fondo del login, ver .page-texture abajo): textura de
+   iconos medicos (cruz, pulso cardiaco, pastilla) que se desplaza muy
+   despacio, para que el fondo no se sienta estatico sin marear a quien mira
+   la pantalla. El contenedor necesita position:relative + overflow:hidden
+   para que este pseudo-elemento quede contenido dentro de su borde. */
+.sidebar-texture,
+.page-texture {
+  position: relative;
+  overflow: hidden;
+}
+.sidebar-texture::before,
+.page-texture::before {
+  content: "";
+  position: absolute;
+  inset: -40px;
+  background-repeat: repeat;
+  background-size: 200px 160px;
+  animation: texture-drift 65s linear infinite;
+  pointer-events: none;
+}
+/* Sobre el degradado verde oscuro del menu: iconos en blanco. */
+.sidebar-texture::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='160' viewBox='0 0 200 160'%3E%3Cg fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M30 10 v24 M18 22 h24'/%3E%3Cpolyline points='60,100 78,100 86,82 96,118 106,88 114,100 132,100'/%3E%3Crect x='148' y='24' width='36' height='15' rx='7.5' transform='rotate(-30 166 31)'/%3E%3Cline x1='157' y1='24' x2='157' y2='39' transform='rotate(-30 166 31)'/%3E%3C/g%3E%3C/svg%3E");
+  opacity: 0.12;
+}
+/* Sobre el fondo claro del login: mismos iconos, pero en verde institucional
+   (blanco sobre un fondo casi blanco no se vería). */
+.page-texture::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='160' viewBox='0 0 200 160'%3E%3Cg fill='none' stroke='%232F8B63' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M30 10 v24 M18 22 h24'/%3E%3Cpolyline points='60,100 78,100 86,82 96,118 106,88 114,100 132,100'/%3E%3Crect x='148' y='24' width='36' height='15' rx='7.5' transform='rotate(-30 166 31)'/%3E%3Cline x1='157' y1='24' x2='157' y2='39' transform='rotate(-30 166 31)'/%3E%3C/g%3E%3C/svg%3E");
+  opacity: 0.1;
+}
+@keyframes texture-drift {
+  from { background-position: 0 0; }
+  to { background-position: 200px 160px; }
+}
+
+/* Boton primario: barrido de brillo diagonal al pasar el mouse (ver
+   components/Button.jsx, variante "primary"). */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(115deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.btn-shine:hover::after {
+  left: 130%;
+}
+
+/* Item del menu lateral: barra indicadora que crece desde la izquierda. */
+.nav-indicator {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  border-radius: 999px;
+  background: white;
+  transition: height 0.2s ease;
+}
+.nav-item:hover .nav-indicator {
+  height: 55%;
+>>>>>>> Stashed changes
 }
 
 /* Impresion de facturas/recetas: el Modal (ver components/Modal.jsx) se monta
