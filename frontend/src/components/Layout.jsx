@@ -66,11 +66,7 @@ function SidebarContent({ usuario, onLogout, onNavigate, restrictedMode, puedeAl
           <img key={giroLogo} src={logoVerapaz} alt="Hospital Verapaz" className={"w-7 h-7 rounded-full shrink-0" + (giroLogo ? " animate-giro-total" : "")} />
           <div className="text-white font-bold text-sm tracking-wide flex-1 text-left">
             HOSPITAL VERAPAZ
-<<<<<<< Updated upstream
-            {restrictedMode && puedeAlternarModo && (
-=======
-            {restrictedMode ? (
->>>>>>> Stashed changes
+            {restrictedMode && puedeAlternarModo ? (
               <span className="block text-[10px] font-normal opacity-75">Modo restringido</span>
             ) : (
               <span className="block text-[10px] font-normal tracking-wider" style={{ color: "#A5D8BD" }}>Sistema Madián</span>
@@ -143,7 +139,7 @@ export function Layout({ usuario, onLogout, children }) {
   const [giroLogo, setGiroLogo] = useState(0);
 
   const toggleRestrictedMode = () => {
-    setGiroLogo(n => n + 1);
+    setGiroLogo((n) => n + 1);
     if (puedeAlternarModo) {
       setRestrictedMode((prev) => {
         const siguiente = !prev;

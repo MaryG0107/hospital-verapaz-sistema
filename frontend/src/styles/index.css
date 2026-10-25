@@ -86,7 +86,6 @@ body {
   animation: heartbeat 2.4s ease-in-out infinite;
 }
 
-<<<<<<< Updated upstream
 /* El logo del hospital da un giro completo (360) al hacer clic para activar
    o desactivar el modo restringido. Se remonta la imagen (key) para reiniciar
    la animacion en cada clic. */
@@ -96,7 +95,8 @@ body {
 }
 .animate-giro-total {
   animation: giro-total 0.7s ease-in-out;
-=======
+}
+
 /* Menu lateral (y fondo del login, ver .page-texture abajo): textura de
    iconos medicos (cruz, pulso cardiaco, pastilla) que se desplaza muy
    despacio, para que el fondo no se sienta estatico sin marear a quien mira
@@ -169,7 +169,6 @@ body {
 }
 .nav-item:hover .nav-indicator {
   height: 55%;
->>>>>>> Stashed changes
 }
 
 /* Impresion de facturas/recetas: el Modal (ver components/Modal.jsx) se monta

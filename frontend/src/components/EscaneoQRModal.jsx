@@ -11,10 +11,11 @@ const POLL_MS = 2500;
 // Dev-Mari: para computadoras sin camara — muestra un QR que abre la pagina
 // de escaneo en el navegador del telefono (misma red o por internet via ngrok). El telefono
 // genera el PDF con su propia camara y lo sube a una sesion efimera; esta
-// pantalla consulta cada POLL_MS si ya llego, y cuando llega corre el mismo
-// OCR de datos basicos y entrega el resultado con la misma forma que
-// CameraScannerModal (blob + {paginas, nombre, datosBasicos}), para que el
-// llamador use un unico manejador sin importar de donde vino el escaneo.
+// pantalla consulta cada POLL_MS si ya llego, y cuando llega entrega el
+// resultado con la misma forma que CameraScannerModal (blob +
+// {paginas, nombre}), para que el llamador use un unico manejador sin
+// importar de donde vino el escaneo. Al igual que en CameraScannerModal, no
+// se extraen datos del documento: la captura es manual.
 // Un QR con "localhost" en la URL no sirve: para el telefono, "localhost"
 // es el telefono mismo, no la computadora. Si la PC abrio la app asi (en
 // vez de por su direccion de red), no hay forma de armar un enlace valido
