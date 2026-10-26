@@ -36,7 +36,7 @@ hospital-verapaz-sistema/
 │   │   ├── middlewares/        auth.middleware.js — JWT, roles, tokens temporales
 │   │   ├── services/            lógica de negocio (ej. facturacion.service.js con rollback)
 │   │   └── utils/               crypto.util.js — cifrado del diagnóstico (RF-10)
-│   ├── prisma/schema.prisma    esquema de base de datos (9 módulos)
+│   ├── prisma/schema.prisma    esquema de base de datos (11 módulos)
 │   └── package.json
 │
 └── docs/                        documentación del proyecto
@@ -48,17 +48,19 @@ hospital-verapaz-sistema/
     └── diagramas/                (pendiente: diagramas de actividades)
 ```
 
-## Módulos del sistema (9)
+## Módulos del sistema (11)
 
 1. Registro y Admisión de Pacientes
 2. Expediente Clínico (diagnóstico confidencial, cifrado)
-3. Tratamiento y Medicamentos Intrahospitalarios
-4. Clientes Referidos
-5. Área Financiera (Facturación Hospital + Facturación Farmacia)
-6. Farmacia (inventario, módulo independiente)
-7. Bitácora de Visitas
-8. Seguridad y Roles
-9. Reportes
+3. Documentos del Paciente
+4. Tratamiento y Medicamentos Intrahospitalarios
+5. Clientes Referidos
+6. Área Financiera (Facturación Hospital + Facturación Farmacia)
+7. Gastos del Hospital
+8. Farmacia (inventario, módulo independiente)
+9. Bitácora de Visitas
+10. Seguridad y Roles
+11. Reportes
 
 Cada módulo tiene su propio router/controlador en el backend y su propia
 carpeta de página en el frontend, para que cualquier integrante del
