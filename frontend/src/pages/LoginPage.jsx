@@ -5,6 +5,7 @@ import { Banner } from "../components/Banner";
 import { COLORS } from "../styles/tokens";
 import { useAuth } from "../context/AuthContext";
 import logoVerapaz from "../assets/logo-verapaz.png";
+import logoMadian from "../assets/logo-madian.png";
 
 export function LoginPage() {
   const { login, sesionExpirada } = useAuth();
@@ -28,11 +29,21 @@ export function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-4 sm:p-6"
+      className="page-texture min-h-screen flex items-center justify-center p-4 sm:p-6"
       style={{ background: `linear-gradient(135deg, ${COLORS.lightBg} 0%, #E5F6EE 100%)` }}
     >
+      {/* Formas grandes y difuminadas, muy suaves, solo para que el fondo
+          no se sienta plano detras de la tarjeta de login. */}
       <div
-        className="animate-fade-in-up w-full flex flex-col md:flex-row rounded-2xl overflow-hidden shadow-lifted bg-white"
+        className="absolute rounded-full animate-float-blob-slow"
+        style={{ width: 420, height: 420, background: COLORS.navyLight, opacity: 0.08, filter: "blur(60px)", top: "-10%", left: "-8%" }}
+      />
+      <div
+        className="absolute rounded-full animate-float-blob"
+        style={{ width: 320, height: 320, background: COLORS.gold, opacity: 0.07, filter: "blur(60px)", bottom: "-8%", right: "-6%" }}
+      />
+      <div
+        className="animate-fade-in-up relative w-full flex flex-col md:flex-row rounded-2xl overflow-hidden shadow-lifted bg-white"
         style={{ maxWidth: 880 }}
       >
         {/* Panel de marca */}
@@ -49,16 +60,21 @@ export function LoginPage() {
             style={{ width: 180, height: 180, background: "white", bottom: -60, left: -60 }}
           />
           <div className="relative">
-            <img
-              src={logoVerapaz}
-              alt="Hospital Verapaz"
-              className="w-14 h-14 rounded-full mb-6 animate-heartbeat"
-              style={{ border: "2px solid rgba(255,255,255,0.3)" }}
-            />
-            <div className="text-xs font-bold tracking-[0.2em]" style={{ color: COLORS.goldLight }}>HOSPITAL VERAPAZ</div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white mt-2 leading-snug">
-              Sistema de gestión de expediente clínico y administrativo
+            <div className="flex items-center gap-3 mb-6">
+              <img
+                src={logoVerapaz}
+                alt="Hospital Verapaz"
+                className="w-12 h-12 rounded-full shrink-0 animate-heartbeat"
+                style={{ border: "2px solid rgba(255,255,255,0.3)" }}
+              />
+              <div className="text-xl font-bold tracking-[0.1em]" style={{ color: COLORS.goldLight }}>HOSPITAL VERAPAZ</div>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-white mt-1 leading-snug">
+              Madián
             </h1>
+            <p className="text-sm font-semibold mt-1" style={{ color: "white" }}>
+              Sistema de gestión de expediente clínico y administrativo
+            </p>
             <p className="text-sm mt-3" style={{ color: "#B7E4CC" }}>
               Cobán, Alta Verapaz — acceso exclusivo para personal autorizado.
             </p>
@@ -70,6 +86,7 @@ export function LoginPage() {
 
         {/* Panel de acceso */}
         <div className="md:w-3/5 px-6 py-8 sm:px-10 sm:py-12 flex flex-col justify-center">
+          <img src={logoMadian} alt="Madián" className="h-10 w-auto mb-6 self-start" />
           <div className="mb-6">
             <h2 className="text-xl font-bold" style={{ color: COLORS.text }}>Iniciar sesión</h2>
             <p className="text-sm mt-1" style={{ color: COLORS.textMuted }}>Ingresa con tu correo y contraseña asignados.</p>
@@ -90,7 +107,7 @@ export function LoginPage() {
                   onChange={(e) => setCorreo(e.target.value)}
                   placeholder="correo@hospitalverapaz.gt"
                   className="w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all duration-150 focus:border-navy focus:ring-2 focus:shadow-soft"
-                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(0, 134, 67, 0.18)" }}
+                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(47, 139, 99, 0.18)" }}
                 />
               </div>
             </div>
@@ -106,7 +123,7 @@ export function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all duration-150 focus:border-navy focus:ring-2 focus:shadow-soft"
-                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(0, 134, 67, 0.18)" }}
+                  style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(47, 139, 99, 0.18)" }}
                 />
               </div>
             </div>

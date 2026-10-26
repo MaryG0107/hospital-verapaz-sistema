@@ -6,7 +6,7 @@
 //   interno es aleatorio y el MIME se valida contra una lista de permitidos.
 // - No se usan rutas provistas por el usuario para leer ni escribir disco.
 import crypto from "crypto";
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { encryptBuffer } from "./crypto.util.js";
 
@@ -64,11 +64,14 @@ export function nombreInternoAleatorio() {
 
 // Cifra el buffer y lo persiste en el directorio indicado. Devuelve el
 // nombre interno generado (nunca una ruta provista por el cliente).
-export function guardarArchivoCifrado(buffer, directorio, keyHex) {
-  fs.mkdirSync(directorio, { recursive: true });
+// Asincrona (fs/promises): se llama dentro de transacciones de registro de
+// paciente, y la escritura sincrona bloqueaba el event loop completo con
+// archivos grandes, congelando el servidor para el resto de peticiones.
+export async function guardarArchivoCifrado(buffer, directorio, keyHex) {
+  await fs.mkdir(directorio, { recursive: true });
   const nombre = nombreInternoAleatorio();
   const sobre = encryptBuffer(buffer, keyHex);
-  fs.writeFileSync(path.join(directorio, nombre), sobre);
+  await fs.writeFile(path.join(directorio, nombre), sobre);
   return nombre;
 }
 

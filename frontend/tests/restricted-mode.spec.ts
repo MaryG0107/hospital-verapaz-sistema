@@ -35,9 +35,11 @@ test.describe('Modo Restringido (Logo del Hospital)', () => {
     await expect(page.locator('nav').getByText('Registro y Admisión', { exact: true })).toBeVisible();
     await expect(page.locator('nav').getByText('Expediente Clínico', { exact: true })).toBeVisible();
     
-    // Verificar rotación del logo
+    // Verificar el giro del logo (animacion de un solo golpe de 360 grados
+    // al hacer clic, no una rotacion fija que refleje el estado - ver
+    // styles/index.css, .animate-giro-total)
     const logoImg = page.locator('img[alt="Hospital Verapaz"]').first();
-    await expect(logoImg).toHaveAttribute('style', /rotate\(180deg\)/);
+    await expect(logoImg).toHaveClass(/animate-giro-total/);
   });
 
   test('Segundo clic restaura modo normal', async ({ page }) => {

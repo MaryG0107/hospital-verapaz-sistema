@@ -13,6 +13,7 @@ import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../styles/tokens";
 import { ROLES, tieneRol } from "../utils/roles";
+import { fechaDia } from "../utils/fechas";
 
 function ahoraFecha() { return new Date().toISOString().slice(0, 10); }
 
@@ -163,7 +164,7 @@ export function GastosPage() {
           emptyMessage={gastosPag.loading ? "Cargando…" : "Sin gastos registrados."}
           renderRow={(g) => (
             <>
-              <td className="px-4 py-3">{new Date(g.fecha).toLocaleDateString()}</td>
+              <td className="px-4 py-3">{fechaDia(g.fecha)}</td>
               <td className="px-4 py-3">{g.proveedor}{g.descripcion ? <span className="block text-xs" style={{ color: "#999" }}>{g.descripcion}</span> : null}</td>
               <td className="px-4 py-3">{g.categoriaFiscal?.nombre || <span style={{ color: "#999" }}>Sin clasificar</span>}</td>
               <td className="px-4 py-3" style={{ color: "#666" }}>{g.numeroFactura || "—"}</td>

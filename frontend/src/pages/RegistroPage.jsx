@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Printer, Camera, FileText, Download, Trash2, Smartphone, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { Printer, Camera, FileText, Download, Trash2, Smartphone, Eye, ChevronDown, ChevronUp, UserPlus } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/Card";
 import { Table } from "../components/Table";
@@ -20,10 +20,11 @@ import { ROLES, tieneRol } from "../utils/roles";
 import { ESTADOS_CIVILES, NACIONALIDADES } from "../utils/guatemala";
 import { CONDICIONES_EGRESO, CONDICIONES_EGRESO_BEBE } from "../utils/condicionesEgreso";
 import { Cie10Input } from "../components/Cie10Input";
+import { Combobox } from "../components/Combobox";
 import { limpiarDPI, validarDPI } from "../utils/dpi";
 import { limpiarTelefono, telefonoIncompleto } from "../utils/telefono";
 import { COLORS } from "../styles/tokens";
-import { fechaDia, fechaLocal, fechaHoraLocal } from "../utils/fechas";
+import { fechaDia, fechaLocal, fechaHoraLocal, hoyISO, calcularEdad } from "../utils/fechas";
 
 const CAMPOS_INGRESO_VACIOS = {
   idNombre: "", idDpi: "", idHistoria: "", idDireccion: "", idLugarNacimiento: "",
@@ -197,7 +198,7 @@ const CAMPOS_VACIOS = {
   estadoCivil: "", ocupacion: "", religion: "", nacionalidad: "",
   nombreConyuge: "", direccionConyuge: "", telefonoConyuge: "", nombrePadre: "", nombreMadre: "",
   contactoEmergencia: "", parentesco: "", direccionEmergencia: "", telefonoEmergencia: "",
-  otrasHospitalizaciones: "", referidoDe: "", serviciosSolicitados: "", referidoPor: "",
+  otrasHospitalizaciones: "", referidoDe: "", serviciosSolicitados: "", referidoPor: "", medicoReferenteId: "",
   impresionClinicaIngreso: "", fechaEgreso: "", horaEgreso: "", diagnosticosEgreso: [],
   complicacionesEgreso: [], operacionesLista: [], matNumeroHijo: "", matFecha: "", matHora: "",
   matSexo: "", matCondicion: "", matAutopsia: "", matCausaMuerte: "", matFechaMuerte: "",
@@ -223,6 +224,37 @@ export function RegistroPage({ onVerExpediente }) {
   // Dev-Mari: si el servidor tiene activada la lectura avanzada (modelo de
   // vision), se le avisa al personal que la imagen viaja a un servicio externo.
   const { data: lecturaAvanzada } = useFetch(puedeRegistrar ? "/pacientes/lectura-avanzada/estado" : null, { enabled: puedeRegistrar });
+
+  // Medicos del modulo Clientes Referidos (RF-16), para elegir quien refirio
+  // al paciente en vez de escribirlo siempre a mano.
+  const { data: medicosReferentes, reload: reloadMedicosReferentes } = useFetch(puedeRegistrar ? "/referidos" : null, { enabled: puedeRegistrar });
+  const [nuevoMedicoAbierto, setNuevoMedicoAbierto] = useState(false);
+  const [nuevoMedico, setNuevoMedico] = useState({ nombre: "", especialidad: "", comisionQ: "" });
+  const [guardandoMedico, setGuardandoMedico] = useState(false);
+  const [errorMedico, setErrorMedico] = useState(null);
+
+  async function registrarMedicoReferente(e) {
+    e.preventDefault();
+    if (!nuevoMedico.nombre.trim()) return;
+    setGuardandoMedico(true);
+    setErrorMedico(null);
+    try {
+      const creado = await api.post("/referidos", {
+        nombre: nuevoMedico.nombre.trim(),
+        especialidad: nuevoMedico.especialidad.trim() || undefined,
+        comisionQ: nuevoMedico.comisionQ === "" ? undefined : Number(nuevoMedico.comisionQ),
+      });
+      await reloadMedicosReferentes();
+      setCampo("medicoReferenteId", String(creado.id));
+      setCampo("referidoPor", creado.nombre);
+      setNuevoMedico({ nombre: "", especialidad: "", comisionQ: "" });
+      setNuevoMedicoAbierto(false);
+    } catch (err) {
+      setErrorMedico(err.message);
+    } finally {
+      setGuardandoMedico(false);
+    }
+  }
 
   const [ingresoPacienteId, setIngresoPacienteId] = useState(null);
   const [mostrarFicha, setMostrarFicha] = useState(false);
@@ -452,7 +484,6 @@ export function RegistroPage({ onVerExpediente }) {
       return nuevo;
     });
     setCamposOCR(new Set(llenados));
-    setOcrDetalle({ texto: d.textoCrudo || "", error: d.error || null, fuente: d.fuente || "local", avisoIA: d.avisoIA || null });
     // Con un expediente escaneado, los datos opcionales ya quedan en el PDF
     // original: se ocultan por defecto (el interruptor los vuelve a mostrar).
     setMostrarOpcionales(false);
@@ -481,7 +512,6 @@ export function RegistroPage({ onVerExpediente }) {
     setDocumentoPendiente(null);
     setMensajeDocumento(null);
     setCamposOCR(new Set());
-    setOcrDetalle(null);
     setMostrarOpcionales(false);
   }
 
@@ -531,7 +561,6 @@ export function RegistroPage({ onVerExpediente }) {
   // auto-muestran, ni al entrar al módulo ni al quitar un escaneo.
   const [mostrarOpcionales, setMostrarOpcionales] = useState(false);
   const [camposOCR, setCamposOCR] = useState(new Set());
-  const [ocrDetalle, setOcrDetalle] = useState(null); // { texto, error } del ultimo escaneo
 
   const dpiEstado = validarDPI(form.dpi);
   const DPI_COLOR = { valido: COLORS.green, invalido: COLORS.red, incompleto: "#B08B2E", vacio: "#888" };
@@ -596,6 +625,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
       (limpiarTelefono(form.telefono).length !== 8 && "El teléfono debe tener 8 dígitos.") ||
       ([form.telefonoConyuge, form.telefonoEmergencia].some((telefono) => telefono && limpiarTelefono(telefono).length !== 8) && "Los teléfonos opcionales deben tener 8 dígitos.") ||
       (Number(form.edad) < 0 || Number(form.edad) > 130) && "La edad debe estar entre 0 y 130 años." ||
+      (form.fechaNacimiento > hoyISO() && "La fecha de nacimiento no puede ser posterior a hoy.") ||
       (form.horaEgreso && !horaNumericaValida(form.horaEgreso) && "La hora de egreso debe escribirse con cuatro dígitos (HHMM).") ||
       (form.matHora && !horaNumericaValida(form.matHora) && "La hora del nacimiento debe escribirse con cuatro dígitos (HHMM).") ||
       ((form.horaEgreso && !form.fechaEgreso || form.matHora && !form.matFecha) && "Seleccione la fecha correspondiente para guardar la hora.") ||
@@ -657,6 +687,7 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
         referidoDe: form.referidoDe.trim() || null,
         serviciosSolicitados: form.serviciosSolicitados.trim() || null,
         referidoPor: form.referidoPor.trim() || null,
+        medicoReferenteId: form.medicoReferenteId ? Number(form.medicoReferenteId) : null,
         impresionClinicaIngreso: form.impresionClinicaIngreso.trim() || null,
         fechaEgreso: fechaHoraIso(form.fechaEgreso, form.horaEgreso),
         ...(hayDatosEgreso ? { egresoClinico } : {}),
@@ -695,7 +726,6 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
       setAdjuntos([]);
       setMensajeDocumento(null);
       setCamposOCR(new Set());
-      setOcrDetalle(null);
       setMostrarOpcionales(false);
       pacientesLista.reload();
     } catch (err) {
@@ -796,21 +826,12 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
           )}
 
           {urlVistaPrevia && (
-            <iframe title="Vista previa del expediente escaneado" src={urlVistaPrevia} className="w-full mt-3 rounded-lg" style={{ height: 420, border: `1px solid ${COLORS.border}` }} />
-          )}
-
-          {documentoPendiente && ocrDetalle && (
-            <details className="mt-3 text-xs" style={{ color: "#888" }}>
-              <summary className="cursor-pointer font-semibold">Ver cómo se leyó el documento (diagnóstico)</summary>
-              <p className="mt-2">Lector usado: <strong>{ocrDetalle.fuente === "ia" ? "lectura avanzada (modelo de visión)" : "lector local (Tesseract)"}</strong></p>
-              {ocrDetalle.avisoIA && <p className="mt-1" style={{ color: COLORS.gold }}>Lectura avanzada no disponible: {ocrDetalle.avisoIA}</p>}
-              {ocrDetalle.error && <p className="mt-1" style={{ color: COLORS.red }}>Error del lector: {ocrDetalle.error}</p>}
-              {ocrDetalle.fuente !== "ia" && (
-                <pre className="whitespace-pre-wrap mt-2 p-2 rounded-lg overflow-auto" style={{ backgroundColor: "#f6f6f6", maxHeight: 220 }}>
-                  {ocrDetalle.texto || "(no se leyó ningún texto)"}
-                </pre>
-              )}
-            </details>
+            <iframe
+              title="Vista previa del expediente escaneado"
+              src={`${urlVistaPrevia}#view=Fit`}
+              className="w-full mt-3 rounded-lg"
+              style={{ height: 640, border: `1px solid ${COLORS.border}` }}
+            />
           )}
         </Card>
       )}
@@ -833,11 +854,19 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                   <TextInput name="horaIngreso" required inputMode="numeric" placeholder="14:30" value={formatearHoraVisual(form.horaIngreso)} onChange={(e) => setCampo("horaIngreso", e.target.value.replace(/\D/g, "").slice(0, 4))} />
                 </FormField>
                 <FormField label="Historia clínica">
-                  <TextInput name="historiaClinica" required inputMode="numeric" pattern="[0-9]+" value={form.historiaClinica} onChange={(e) => setCampo("historiaClinica", e.target.value.replace(/\D/g, "").slice(0, 40))} />
+                  <TextInput name="historiaClinica" required inputMode="numeric" pattern="[0-9]+" maxLength={20} value={form.historiaClinica} onChange={(e) => setCampo("historiaClinica", e.target.value.replace(/\D/g, "").slice(0, 20))} />
                   {avisoOCR("historiaClinica")}
                 </FormField>
                 <FormField label="Nombre completo">
-                  <TextInput name="nombreCompleto" required value={form.nombreCompleto} onChange={(e) => setCampo("nombreCompleto", e.target.value)} />
+                  <TextInput
+                    name="nombreCompleto"
+                    required
+                    maxLength={100}
+                    value={form.nombreCompleto}
+                    // Solo letras (con tildes/ñ), espacios, apostrofo y guion
+                    // (ej. "D'Angelo", "Perez-Lopez") - un nombre no lleva numeros.
+                    onChange={(e) => setCampo("nombreCompleto", e.target.value.replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñÜü\s'-]/g, "").slice(0, 100))}
+                  />
                   {avisoOCR("nombreCompleto")}
                 </FormField>
                 <FormField label="Dirección">
@@ -853,11 +882,47 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
                   <TextInput name="lugarNacimiento" required value={form.lugarNacimiento} onChange={(e) => setCampo("lugarNacimiento", e.target.value)} />
                 </FormField>
                 <FormField label="Fecha de nacimiento">
-                  <TextInput name="fechaNacimiento" type="date" required value={form.fechaNacimiento} onChange={(e) => setCampo("fechaNacimiento", e.target.value)} />
+                  <TextInput
+                    name="fechaNacimiento"
+                    type="date"
+                    required
+                    max={hoyISO()}
+                    value={form.fechaNacimiento}
+                    onChange={(e) => {
+                      const valor = e.target.value;
+                      setCampo("fechaNacimiento", valor);
+                      // Autocalcula la edad; el campo sigue siendo editable a
+                      // mano despues (ej. si el expediente en papel trae otra
+                      // edad distinta a la que da la fecha de nacimiento).
+                      const edadCalculada = calcularEdad(valor);
+                      if (edadCalculada !== null) setCampo("edad", String(edadCalculada));
+                    }}
+                  />
                   {avisoOCR("fechaNacimiento")}
                 </FormField>
                 <FormField label="Edad">
-                  <TextInput name="edad" required inputMode="numeric" pattern="[0-9]{1,3}" value={form.edad} onChange={(e) => setCampo("edad", e.target.value.replace(/\D/g, "").slice(0, 3))} />
+                  <div className="relative mt-1.5">
+                    <TextInput
+                      name="edad"
+                      required
+                      inputMode="numeric"
+                      pattern="[0-9]{1,3}"
+                      maxLength={3}
+                      value={form.edad}
+                      onChange={(e) => {
+                        const limpio = e.target.value.replace(/\D/g, "").slice(0, 3);
+                        setCampo("edad", limpio === "" ? "" : String(Math.min(Number(limpio), 130)));
+                      }}
+                      className="pr-12"
+                      style={{ marginTop: 0 }}
+                    />
+                    <span
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
+                      style={{ color: "#999" }}
+                    >
+                      años
+                    </span>
+                  </div>
                 </FormField>
                 <FormField label="Sexo">
                   <Select name="sexo" required value={form.sexo} onChange={(e) => setCampo("sexo", e.target.value)}>
@@ -948,9 +1013,34 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
               <div className="col-span-1 sm:col-span-2 lg:col-span-3">
                 <FormField label="Otras hospitalizaciones"><TextArea name="otrasHospitalizaciones" rows={2} value={form.otrasHospitalizaciones} onChange={(e) => setCampo("otrasHospitalizaciones", e.target.value)} /></FormField>
               </div>
-              <FormField label="Referido de"><TextInput name="referidoDe" value={form.referidoDe} onChange={(e) => setCampo("referidoDe", e.target.value)} /></FormField>
+              <FormField label="Referido de (institución/clínica)"><TextInput name="referidoDe" value={form.referidoDe} onChange={(e) => setCampo("referidoDe", e.target.value)} /></FormField>
               <FormField label="Servicios"><TextInput name="serviciosSolicitados" value={form.serviciosSolicitados} onChange={(e) => setCampo("serviciosSolicitados", e.target.value)} /></FormField>
-              <FormField label="Referido por"><TextInput name="referidoPor" value={form.referidoPor} onChange={(e) => setCampo("referidoPor", e.target.value)} /></FormField>
+              <FormField label="Referido por (médico)">
+                <Combobox
+                  placeholder="Buscar médico registrado o escribir el nombre…"
+                  options={(medicosReferentes || []).map((m) => ({ value: String(m.id), label: m.nombre, group: m.especialidad || undefined }))}
+                  value={form.medicoReferenteId}
+                  onChange={(valor) => {
+                    setCampo("medicoReferenteId", valor);
+                    const m = (medicosReferentes || []).find((x) => String(x.id) === valor);
+                    if (m) setCampo("referidoPor", m.nombre);
+                  }}
+                  // Si escribe un nombre que no esta en la lista, queda como
+                  // texto libre (sin vincular a un medico registrado).
+                  onQueryChange={(texto) => {
+                    setCampo("referidoPor", texto);
+                    setCampo("medicoReferenteId", "");
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setNuevoMedicoAbierto(true)}
+                  className="flex items-center gap-1 text-xs font-semibold mt-1.5"
+                  style={{ color: COLORS.navy }}
+                >
+                  <UserPlus size={13} /> Registrar nuevo médico
+                </button>
+              </FormField>
               <div className="col-span-1 sm:col-span-2 lg:col-span-3">
                 <FormField label="Impresión clínica de ingreso"><TextArea name="impresionClinicaIngreso" rows={2} value={form.impresionClinicaIngreso} onChange={(e) => setCampo("impresionClinicaIngreso", e.target.value)} /></FormField>
               </div>
@@ -1222,6 +1312,29 @@ function ListaAdjuntos({ archivos, onChange, titulo = "Adjuntar archivos (result
         onClose={() => setEscaneoQRAbierto(false)}
         onConfirmar={manejarEscaneoConfirmado}
       />
+
+      <Modal
+        open={nuevoMedicoAbierto}
+        onClose={() => { setNuevoMedicoAbierto(false); setErrorMedico(null); }}
+        title="Registrar nuevo médico referente"
+        icon={UserPlus}
+      >
+        {errorMedico && <Banner tone="error">{errorMedico}</Banner>}
+        <form onSubmit={registrarMedicoReferente} className="grid grid-cols-1 gap-3">
+          <FormField label="Nombre">
+            <TextInput required value={nuevoMedico.nombre} onChange={(e) => setNuevoMedico((f) => ({ ...f, nombre: e.target.value }))} />
+          </FormField>
+          <FormField label="Especialidad">
+            <TextInput value={nuevoMedico.especialidad} onChange={(e) => setNuevoMedico((f) => ({ ...f, especialidad: e.target.value }))} />
+          </FormField>
+          <FormField label="Comisión (Q por paciente) — opcional">
+            <TextInput type="number" step="0.01" min="0" value={nuevoMedico.comisionQ} onChange={(e) => setNuevoMedico((f) => ({ ...f, comisionQ: e.target.value }))} />
+          </FormField>
+          <Button type="submit" disabled={guardandoMedico || !nuevoMedico.nombre.trim()}>
+            {guardandoMedico ? "Guardando…" : "Registrar"}
+          </Button>
+        </form>
+      </Modal>
     </div>
   );
 }

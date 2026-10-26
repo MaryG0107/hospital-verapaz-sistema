@@ -24,7 +24,7 @@ export function ReferidosPage() {
     setGuardando(true);
     setMensaje(null);
     try {
-      await api.post("/referidos", { ...form, comisionQ: Number(form.comisionQ) });
+      await api.post("/referidos", { ...form, comisionQ: form.comisionQ === "" ? undefined : Number(form.comisionQ) });
       setMensaje({ tone: "success", texto: "Médico referente registrado." });
       setForm({ nombre: "", especialidad: "", comisionQ: "" });
       reload();
@@ -37,7 +37,7 @@ export function ReferidosPage() {
 
   return (
     <div>
-      <PageHeader title="Clientes Referidos" subtitle="Médicos externos que refieren pacientes, con su comisión asociada (RF-16)" />
+      <PageHeader title="Clientes Referidos" subtitle="Médicos externos que refieren pacientes, con su comisión asociada" />
       {error && <Banner tone="error">{error}</Banner>}
       <Table
         headers={["Médico referente", "Especialidad", "Pacientes referidos", "Comisión"]}
@@ -48,7 +48,7 @@ export function ReferidosPage() {
             <td className="px-4 py-3 font-semibold">{r.nombre}</td>
             <td className="px-4 py-3" style={{ color: "#666" }}>{r.especialidad || "—"}</td>
             <td className="px-4 py-3" style={{ color: "#666" }}>{r.pacientesReferidos}</td>
-            <td className="px-4 py-3" style={{ color: "#666" }}>Q{Number(r.comisionQ).toFixed(2)}</td>
+            <td className="px-4 py-3" style={{ color: "#666" }}>{r.comisionQ != null ? `Q${Number(r.comisionQ).toFixed(2)}` : "—"}</td>
           </>
         )}
       />
@@ -60,7 +60,7 @@ export function ReferidosPage() {
           <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
             <FormField label="Nombre"><TextInput required value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} /></FormField>
             <FormField label="Especialidad"><TextInput value={form.especialidad} onChange={(e) => setForm((f) => ({ ...f, especialidad: e.target.value }))} /></FormField>
-            <FormField label="Comisión (Q por paciente)"><TextInput type="number" step="0.01" min="0" required value={form.comisionQ} onChange={(e) => setForm((f) => ({ ...f, comisionQ: e.target.value }))} /></FormField>
+            <FormField label="Comisión (Q por paciente) — opcional"><TextInput type="number" step="0.01" min="0" value={form.comisionQ} onChange={(e) => setForm((f) => ({ ...f, comisionQ: e.target.value }))} /></FormField>
             <div className="col-span-1 sm:col-span-2 lg:col-span-3">
               <Button type="submit" disabled={guardando}>{guardando ? "Guardando…" : "Registrar"}</Button>
             </div>

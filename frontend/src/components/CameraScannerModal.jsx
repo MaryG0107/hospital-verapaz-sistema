@@ -6,7 +6,6 @@ import { Banner } from "./Banner";
 import { COLORS } from "../styles/tokens";
 import { procesarEscaneoAutomatico, idAleatorio } from "../utils/scanProcessing";
 import { generarPdfDePaginas, validarPdf, descargarPdf, nombreDescarga, tamanoLegibleMB, renderizarPrimeraPaginaPdf, esPdf } from "../utils/pdfDocumentos";
-import { extraerDatosBasicos } from "../utils/ocrDatosBasicos";
 
 // Escaner documental automatico (Cambios2): como un escaner de impresion —
 // se toma la foto o se sube el archivo y el sistema detecta los bordes,
@@ -120,15 +119,45 @@ export function CameraScannerModal({
 
   useEffect(() => () => detenerCamara(), [detenerCamara]);
 
+  // Engancha el stream al <video> cuando el elemento ya esta montado. El
+  // elemento solo se renderiza en estado "capturando" (y se re-monta al
+  // volver de "procesando" tras escanear una pagina), por eso se re-engancha
+  // cuando cambia el estado.
+  useEffect(() => {
+    if (estado !== "capturando") return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+    if (video.srcObject === stream) {
+      video.play().catch(() => {});
+      return;
+    }
+    video.srcObject = stream;
+    const reproducir = () => video.play().catch(() => {});
+    if (video.readyState >= 1) reproducir();
+    else video.addEventListener("loadedmetadata", reproducir, { once: true });
+    return () => video.removeEventListener("loadedmetadata", reproducir);
+  }, [estado]);
+
   // ---- Camara ----
 
   async function activarCamara() {
     setError(null);
     setAviso(null);
     setPdfResultado(null);
+    // La camara en vivo (getUserMedia) solo existe en "contexto seguro":
+    // HTTPS o localhost. Si el sistema se abrio por la IP de la red en HTTP
+    // (por ejemplo http://192.168.0.104:8080), el navegador bloquea la
+    // camara y getUserMedia ni siquiera aparece — hay que avisarlo en vez
+    // de mostrar un error generico.
+    if (!window.isSecureContext) {
+      setSoportaCamara(false);
+      setError("La cámara solo funciona sobre HTTPS o localhost. Abra el sistema por su dirección https (por ejemplo, el enlace de ngrok) o use 'Subir imagen o PDF del escáner'.");
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setSoportaCamara(false);
-      setError("Este navegador no permite usar la cámara. Use 'Seleccionar imagen' para escanear desde un archivo.");
+      setError("Este navegador no permite usar la cámara. Use 'Subir imagen o PDF del escáner' para escanear desde un archivo.");
       return;
     }
     setEstado("solicitando_permiso");
@@ -138,10 +167,12 @@ export function CameraScannerModal({
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      // IMPORTANTE: el <video> solo existe en el DOM cuando estado es
+      // "capturando". Si se asigna srcObject aqui, videoRef.current todavia
+      // es null y el stream nunca se engancha al elemento -> pantalla negra
+      // con el permiso ya concedido. Solo guardamos el stream y cambiamos el
+      // estado; el useEffect de abajo se encarga de engancharlo cuando el
+      // elemento ya esta montado.
       setCamaraActiva(true);
       setEstado("capturando");
     } catch (err) {
@@ -187,23 +218,21 @@ export function CameraScannerModal({
 
   // Dev-Mari: un PDF ya viene de un escaner fisico (impresora) — no es una
   // foto que haya que enderezar. Se usa tal cual, sin pasar por deteccion de
-  // bordes ni correccion de perspectiva, y se va directo a leer los datos
-  // basicos y confirmar.
+  // bordes ni correccion de perspectiva, y se confirma el PDF.
   async function manejarArchivoPdf(file) {
     setError(null);
     setAviso(null);
-    setEstado("extrayendo_datos");
+    setEstado("procesando");
     try {
       const bytes = await file.arrayBuffer();
-      const { dataUrl, totalPaginas } = await renderizarPrimeraPaginaPdf(bytes);
-      const datosBasicos = await extraerDatosBasicos([dataUrl]);
+      const { totalPaginas } = await renderizarPrimeraPaginaPdf(bytes);
       const blob = new Blob([bytes], { type: "application/pdf" });
       const nombre = nombreDescarga(pacienteId);
       setPdfResultado({ blob, paginas: totalPaginas, nombre });
       setEstado("confirmado");
       if (onConfirmar) {
         try {
-          await onConfirmar(blob, { paginas: totalPaginas, nombre, datosBasicos });
+          await onConfirmar(blob, { paginas: totalPaginas, nombre });
         } catch (err) {
           setError("El documento se generó, pero no se pudo guardar: " + err.message + " Use 'Descargar copia' para no perderlo.");
         }
@@ -256,18 +285,13 @@ export function CameraScannerModal({
       }
       const nombre = nombreDescarga(pacienteId);
 
-      // Lectura automatica de nombre/DPI/telefono/fecha (solo la primera
-      // pagina). Nunca bloquea el guardado: si falla o no reconoce nada,
-      // el formulario se sigue llenando a mano.
-      setEstado("extrayendo_datos");
-      const datosBasicos = await extraerDatosBasicos(paginas.map((p) => p.dataUrl));
-
+      // Solo convierte las fotos a PDF; no se extraen datos del documento.
       setPdfResultado({ blob, paginas: total, nombre });
       setEstado("confirmado");
       detenerCamara();
       if (onConfirmar) {
         try {
-          await onConfirmar(blob, { paginas: total, nombre, datosBasicos });
+          await onConfirmar(blob, { paginas: total, nombre });
         } catch (err) {
           setError("El documento se generó, pero no se pudo guardar en el expediente: " + err.message + " Use 'Descargar copia' para no perderlo.");
         }
@@ -301,7 +325,7 @@ export function CameraScannerModal({
       {/* Vista previa de video con guias del documento */}
       {estado === "capturando" && (
         <div className="relative rounded-xl overflow-hidden mb-3" style={{ backgroundColor: "#111" }}>
-          <video ref={videoRef} playsInline muted className="w-full" style={{ maxHeight: 380 }} />
+          <video ref={videoRef} autoPlay playsInline muted className="w-full" style={{ maxHeight: 380 }} />
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute inset-6 rounded-lg" style={{ border: "2px dashed rgba(255,255,255,0.65)" }} />
             <div className="absolute left-2 top-2 w-6 h-6" style={{ borderTop: "3px solid #fff", borderLeft: "3px solid #fff", borderRadius: 4 }} />
@@ -316,13 +340,6 @@ export function CameraScannerModal({
         <div className="py-10 text-center">
           <RefreshCw size={28} className="animate-spin mx-auto" style={{ color: COLORS.navy }} />
           <p className="text-sm mt-3" style={{ color: "#666" }}>Escaneando: detectando bordes y corrigiendo perspectiva…</p>
-        </div>
-      )}
-
-      {estado === "extrayendo_datos" && (
-        <div className="py-10 text-center">
-          <RefreshCw size={28} className="animate-spin mx-auto" style={{ color: COLORS.navy }} />
-          <p className="text-sm mt-3" style={{ color: "#666" }}>Generando el PDF y leyendo los datos básicos del documento…</p>
         </div>
       )}
 

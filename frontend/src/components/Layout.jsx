@@ -5,7 +5,7 @@ import {
   ShieldCheck, BarChart3, LogOut, Menu, X,
 } from "lucide-react";
 import { COLORS } from "../styles/tokens";
-import { etiquetasRoles } from "../utils/roles";
+import { etiquetasRoles, modulosPermitidos } from "../utils/roles";
 import logoVerapaz from "../assets/logo-verapaz.png";
 
 const NAV_ITEMS = [
@@ -21,6 +21,13 @@ const NAV_ITEMS = [
   { key: "reportes", label: "Reportes", Icon: BarChart3, allowedInRestricted: false },
 ];
 
+// Fondo del menu lateral: el degradado institucional. La textura de puntos en
+// movimiento se agrega aparte con la clase CSS "sidebar-texture" (ver
+// styles/index.css) para poder animarla sin pelear con este degradado.
+const SIDEBAR_BG = {
+  background: `linear-gradient(165deg, ${COLORS.navyDark} 0%, ${COLORS.navy} 55%, ${COLORS.navyLight} 100%)`,
+};
+
 function iniciales(nombre) {
   return (nombre || "")
     .split(" ")
@@ -30,28 +37,39 @@ function iniciales(nombre) {
     .join("");
 }
 
-function SidebarContent({ usuario, onLogout, onNavigate, restrictedMode, onToggleRestrictedMode }) {
+function SidebarContent({ usuario, onLogout, onNavigate, restrictedMode, puedeAlternarModo, onToggleRestrictedMode, giroLogo }) {
   const location = useLocation();
-  
-  // Filtrar items según el modo restringido
-  const visibleItems = NAV_ITEMS.filter(item => 
-    restrictedMode ? item.allowedInRestricted : true
-  );
+
+  // Permisos por rol: el Administrador ve todos; Recepcion/Enfermeria/
+  // Consulta solo Registro y Expediente. El modo restringido manual (solo
+  // para el Administrador) oculta ademas los demas modulos.
+  const permitidos = modulosPermitidos(usuario);
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (permitidos !== null && !permitidos.has(item.key)) return false;
+    if (permitidos === null && restrictedMode && !item.allowedInRestricted) return false;
+    return true;
+  });
 
   return (
-    <>
+    // relative + z-10: el contenido debe pintarse encima de la textura
+    // animada del fondo (::before de .sidebar-texture, ver styles/index.css),
+    // que al ser position:absolute pintaria por encima del contenido normal
+    // si no se le da una capa (stacking context) mas alta.
+    <div className="relative z-10 flex flex-col flex-1 min-h-0">
       <div className="px-5 pt-6 pb-5">
         <button
           onClick={onToggleRestrictedMode}
           className="flex items-center gap-2.5 w-full"
-          aria-label={restrictedMode ? "Mostrar todos los módulos" : "Ocultar módulos (solo Registro y Expediente)"}
+          aria-label={puedeAlternarModo ? (restrictedMode ? "Mostrar todos los módulos" : "Ocultar módulos (solo Registro y Expediente)") : "Hospital Verapaz"}
           style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
         >
-          <img src={logoVerapaz} alt="Hospital Verapaz" className="w-7 h-7 rounded-full shrink-0 transition-transform duration-200" style={{ transform: restrictedMode ? "rotate(180deg)" : "none" }} />
+          <img key={giroLogo} src={logoVerapaz} alt="Hospital Verapaz" className={"w-7 h-7 rounded-full shrink-0" + (giroLogo ? " animate-giro-total" : "")} />
           <div className="text-white font-bold text-sm tracking-wide flex-1 text-left">
             HOSPITAL VERAPAZ
-            {restrictedMode && (
+            {restrictedMode && puedeAlternarModo ? (
               <span className="block text-[10px] font-normal opacity-75">Modo restringido</span>
+            ) : (
+              <span className="block text-[10px] font-normal tracking-wider" style={{ color: "#A5D8BD" }}>Sistema Madián</span>
             )}
           </div>
         </button>
@@ -76,16 +94,17 @@ function SidebarContent({ usuario, onLogout, onNavigate, restrictedMode, onToggl
               key={item.key}
               to={`/${item.key}`}
               onClick={() => onNavigate?.()}
-              className="w-full flex items-center gap-3 text-left px-3 py-2.5 rounded-xl text-sm mb-1 transition-all duration-150"
+              className="nav-item relative w-full flex items-center gap-3 text-left px-3 py-2.5 rounded-xl text-sm mb-1 transition-all duration-150 hover:translate-x-1"
               style={
                 activo
-                  ? { backgroundColor: COLORS.gold, color: COLORS.navy, fontWeight: 600 }
+                  ? { background: `linear-gradient(135deg, ${COLORS.gold}, ${COLORS.goldLight})`, color: COLORS.navyDark, fontWeight: 600 }
                   : { color: "#D8F0E2", backgroundColor: "transparent" }
               }
-              onMouseEnter={(e) => { if (!activo) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; }}
+              onMouseEnter={(e) => { if (!activo) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.1)"; }}
               onMouseLeave={(e) => { if (!activo) e.currentTarget.style.backgroundColor = "transparent"; }}
             >
-              <item.Icon size={17} strokeWidth={2} className="shrink-0" />
+              {!activo && <span className="nav-indicator" />}
+              <item.Icon size={17} strokeWidth={2} className="shrink-0 transition-transform duration-150" />
               <span className="truncate">{item.label}</span>
             </Link>
           );
@@ -101,30 +120,49 @@ function SidebarContent({ usuario, onLogout, onNavigate, restrictedMode, onToggl
           Cerrar sesión
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
 export function Layout({ usuario, onLogout, children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [restrictedMode, setRestrictedMode] = useState(false);
+  const [restrictedMode, setRestrictedMode] = useState(() => {
+    const guardado = localStorage.getItem("hp_restricted_mode");
+    if (guardado === null) return false; // por defecto se ven todos los modulos
+    return guardado === "true";
+  });
+  // Solo el Administrador puede alternar manualmente el modo restringido:
+  // los demas roles ya tienen su menu limitado por permisos.
+  const puedeAlternarModo = modulosPermitidos(usuario) === null;
+  // Se incrementa en cada clic: cambia la key del logo para reiniciar la
+  // animacion de "giro total" (360 grados).
+  const [giroLogo, setGiroLogo] = useState(0);
 
   const toggleRestrictedMode = () => {
-    setRestrictedMode(prev => !prev);
+    setGiroLogo((n) => n + 1);
+    if (puedeAlternarModo) {
+      setRestrictedMode((prev) => {
+        const siguiente = !prev;
+        localStorage.setItem("hp_restricted_mode", String(siguiente));
+        return siguiente;
+      });
+    }
   };
 
   return (
-    <div className="min-h-screen flex" style={{ backgroundColor: COLORS.lightBg }}>
+    <div className="h-screen flex overflow-hidden" style={{ backgroundColor: COLORS.lightBg }}>
       {/* Sidebar de escritorio */}
       <div
-        className="hidden md:flex flex-col shrink-0"
-        style={{ width: 248, backgroundColor: COLORS.navy }}
+        className="hidden md:flex flex-col shrink-0 sidebar-texture"
+        style={{ width: 248, ...SIDEBAR_BG }}
       >
-        <SidebarContent 
-          usuario={usuario} 
-          onLogout={onLogout} 
+        <SidebarContent
+          usuario={usuario}
+          onLogout={onLogout}
           restrictedMode={restrictedMode}
+          puedeAlternarModo={puedeAlternarModo}
           onToggleRestrictedMode={toggleRestrictedMode}
+          giroLogo={giroLogo}
         />
       </div>
 
@@ -132,7 +170,7 @@ export function Layout({ usuario, onLogout, children }) {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-40 flex">
           <div className="absolute inset-0 bg-black/40 animate-fade-in" onClick={() => setMobileOpen(false)} />
-          <div className="relative flex flex-col w-72 max-w-[80%] shadow-lifted" style={{ backgroundColor: COLORS.navy }}>
+          <div className="relative flex flex-col w-72 max-w-[80%] shadow-lifted" style={SIDEBAR_BG}>
             <button
               onClick={() => setMobileOpen(false)}
               className="absolute top-5 right-4 text-white/70 hover:text-white"
@@ -140,12 +178,14 @@ export function Layout({ usuario, onLogout, children }) {
             >
               <X size={20} />
             </button>
-            <SidebarContent 
-              usuario={usuario} 
-              onLogout={onLogout} 
+            <SidebarContent
+              usuario={usuario}
+              onLogout={onLogout}
               onNavigate={() => setMobileOpen(false)}
               restrictedMode={restrictedMode}
+              puedeAlternarModo={puedeAlternarModo}
               onToggleRestrictedMode={toggleRestrictedMode}
+              giroLogo={giroLogo}
             />
           </div>
         </div>
@@ -159,14 +199,14 @@ export function Layout({ usuario, onLogout, children }) {
           </button>
           <button
             onClick={toggleRestrictedMode}
-            aria-label={restrictedMode ? "Mostrar todos los módulos" : "Ocultar módulos (solo Registro y Expediente)"}
+            aria-label={puedeAlternarModo ? (restrictedMode ? "Mostrar todos los módulos" : "Ocultar módulos (solo Registro y Expediente)") : "Hospital Verapaz"}
             style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
           >
-            <img src={logoVerapaz} alt="Hospital Verapaz" className="w-6 h-6 rounded-full transition-transform duration-200" style={{ transform: restrictedMode ? "rotate(180deg)" : "none" }} />
+            <img key={giroLogo} src={logoVerapaz} alt="Hospital Verapaz" className={"w-6 h-6 rounded-full" + (giroLogo ? " animate-giro-total" : "")} />
           </button>
           <div className="text-sm font-bold" style={{ color: COLORS.navy }}>
             HOSPITAL VERAPAZ
-            {restrictedMode && <span className="block text-[10px] font-normal opacity-75">Modo restringido</span>}
+            {restrictedMode && puedeAlternarModo && <span className="block text-[10px] font-normal opacity-75">Modo restringido</span>}
           </div>
         </div>
 

@@ -43,11 +43,11 @@ test("archivos binarios: ida y vuelta identica", () => {
   assert.throws(() => decryptBuffer(sobre, OTRA_LLAVE));
 });
 
-test("un PDF guardado en disco nunca queda en claro y se recupera igual", () => {
+test("un PDF guardado en disco nunca queda en claro y se recupera igual", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verapaz-test-"));
   try {
     const pdf = Buffer.from("%PDF-1.4\nexpediente confidencial de prueba\n");
-    const nombre = guardarArchivoCifrado(pdf, dir, LLAVE);
+    const nombre = await guardarArchivoCifrado(pdf, dir, LLAVE);
     assert.match(nombre, /^enc_[0-9a-f]{48}\.bin$/, "nombre interno aleatorio, sin datos del cliente");
     const enDisco = fs.readFileSync(path.join(dir, nombre));
     assert.ok(!enDisco.includes(Buffer.from("confidencial")), "el contenido no debe verse en el disco");

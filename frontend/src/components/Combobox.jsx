@@ -4,7 +4,7 @@ import { normalizarTexto as normalizar } from "../utils/texto";
 
 // Campo de texto con lista filtrable debajo, agrupada opcionalmente.
 // options: [{ value, label, group? }]
-export function Combobox({ options, value, onChange, placeholder }) {
+export function Combobox({ options, value, onChange, placeholder, onQueryChange }) {
   const seleccionada = options.find((o) => o.value === value);
   const [query, setQuery] = useState(seleccionada?.label || "");
   const [abierto, setAbierto] = useState(false);
@@ -51,10 +51,11 @@ export function Combobox({ options, value, onChange, placeholder }) {
         onChange={(e) => {
           setQuery(e.target.value);
           setAbierto(true);
+          onQueryChange?.(e.target.value);
           if (e.target.value === "") onChange("");
         }}
         className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all duration-150 focus:border-navy focus:ring-2"
-        style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(0, 134, 67, 0.18)" }}
+        style={{ borderColor: COLORS.border, "--tw-ring-color": "rgba(47, 139, 99, 0.18)" }}
       />
       {abierto && (
         <div

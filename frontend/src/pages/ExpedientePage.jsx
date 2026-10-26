@@ -409,7 +409,7 @@ export function ExpedientePage({ pacienteIdInicial }) {
   const imc = calcularIMC(datos.signosVitales.peso, datos.signosVitales.talla);
 
   function seleccionarPaciente(p) {
-    setSelectedId(p.id);
+    setSelectedId(p?.id ?? null);
     setEstado("idle");
     setDiagnostico(null);
     setTempToken("");

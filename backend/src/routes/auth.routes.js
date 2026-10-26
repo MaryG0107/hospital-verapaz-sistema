@@ -10,13 +10,21 @@ const router = Router();
 // Sprint 2: limite de intentos por IP en los endpoints publicos de
 // autenticacion; responde 429 con Retry-After.
 const loginLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 10, countFailuresOnly: true, mensaje: "Demasiados intentos fallidos de inicio de sesión. Espere antes de volver a intentar" });
+// Limitadores independientes: agotar intentos pidiendo el enlace de
+// recuperacion no debe bloquear un reset-password legitimo con un token
+// valido (y viceversa), ya que antes compartian el mismo contador.
+const forgotLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 5, mensaje: "Demasiadas solicitudes de recuperación. Espere antes de volver a intentar" });
 const resetLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 5, mensaje: "Demasiadas solicitudes de recuperación. Espere antes de volver a intentar" });
 
 router.post("/login", loginLimiter, controller.login);
-router.post("/forgot-password", resetLimiter, controller.forgotPassword);
+router.post("/forgot-password", forgotLimiter, controller.forgotPassword);
 router.post("/reset-password", resetLimiter, controller.resetPassword);
 router.post("/logout", requireAuth, controller.logout);
+router.get("/me", requireAuth, controller.me);
 router.post("/token", requireAuth, requireRole(ROLES.ADMIN), controller.solicitarTokenTemporal); // RF-33
-router.post("/token/auto", requireAuth, controller.autogenerarTokenTemporal); // RF-34
+// Solo el Administrador emite codigos: los demas roles (secretaria, doctor)
+// deben pedirselo. Antes cualquier usuario con "puedeAutogenerarToken" podia
+// generarse su propio codigo, lo que anulaba el control.
+router.post("/token/auto", requireAuth, requireRole(ROLES.ADMIN), controller.autogenerarTokenTemporal); // RF-34
 
 export default router;

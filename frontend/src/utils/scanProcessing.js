@@ -371,10 +371,12 @@ export async function procesarPagina(dataUrl, { esquinas, rotaciones = 0, filtro
 }
 
 // Pipeline automatico estilo escaner de impresion: toma la captura tal cual,
-// detecta los bordes del documento (multi-umbral con puntaje), corrige la
-// perspectiva y aplica el filtro documento (alto contraste) sin preguntar
-// nada al usuario. Si la deteccion no tiene confianza, usa el encuadre
-// completo para no bloquear el escaneo.
+// detecta los bordes del documento (multi-umbral con puntaje) y corrige la
+// perspectiva, sin preguntar nada al usuario. Se mantiene a color (sin el
+// filtro "documento" en escala de grises/alto contraste): es informacion
+// clinica de hospital, y a color se conserva la hoja tal como esta, sin
+// arriesgar legibilidad por ahorrar peso. Si la deteccion no tiene
+// confianza, usa el encuadre completo para no bloquear el escaneo.
 export async function procesarEscaneoAutomatico(dataUrl, { maxAncho = 1600 } = {}) {
   const base = await canvasDesdeDataUrl(dataUrl);
   let detectado = true;
@@ -389,5 +391,5 @@ export async function procesarEscaneoAutomatico(dataUrl, { maxAncho = 1600 } = {
   }
   if (!canvas) canvas = base;
 
-  return { canvas: aplicarFiltro(canvas, "documento"), detectado };
+  return { canvas: aplicarFiltro(canvas, "color"), detectado };
 }
