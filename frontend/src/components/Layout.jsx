@@ -128,7 +128,7 @@ export function Layout({ usuario, onLogout, children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [restrictedMode, setRestrictedMode] = useState(() => {
     const guardado = localStorage.getItem("hp_restricted_mode");
-    if (guardado === null) return true; // por defecto solo Registro y Expediente
+    if (guardado === null) return false; // por defecto se ven todos los modulos
     return guardado === "true";
   });
   // Solo el Administrador puede alternar manualmente el modo restringido:
