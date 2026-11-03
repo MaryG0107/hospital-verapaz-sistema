@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   ClipboardList, FileText, FolderOpen, Syringe, Users, Wallet, Receipt, Pill,
-  ShieldCheck, BarChart3, LogOut, Menu, X,
+  ShieldCheck, BarChart3, LogOut, Menu, X, GraduationCap,
 } from "lucide-react";
 import { COLORS } from "../styles/tokens";
 import { etiquetasRoles, modulosPermitidos } from "../utils/roles";
 import logoVerapaz from "../assets/logo-verapaz.png";
+import logoUmg from "../assets/logo-umg.png";
+import { Modal } from "./Modal";
 
 const NAV_ITEMS = [
   { key: "registro", label: "Registro y Admisión", Icon: ClipboardList, allowedInRestricted: true },
@@ -20,6 +22,29 @@ const NAV_ITEMS = [
   { key: "seguridad", label: "Seguridad y Roles", Icon: ShieldCheck, allowedInRestricted: false },
   { key: "reportes", label: "Reportes", Icon: BarChart3, allowedInRestricted: false },
 ];
+
+// Autores del proyecto: se muestran al dar clic al logo de la universidad
+// (esquina superior derecha de todos los modulos).
+const AUTORES = [
+  { nombre: "Maria Guadalupe Saguí", carne: "4090-22-5591" },
+  { nombre: "Diego José Hernández Castellanos", carne: "4090-22-1346" },
+  { nombre: "Angel Allan Francisco Chiquín Gómez", carne: "4090-22-3819" },
+];
+
+function LogoUniversidad({ onClick, className = "" }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={"no-print rounded-full transition-transform duration-150 hover:scale-105 " + className}
+      aria-label="Autores del proyecto"
+      title="Autores del proyecto"
+      style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+    >
+      <img src={logoUmg} alt="Universidad Mariano Gálvez de Guatemala" className="w-full h-full rounded-full" />
+    </button>
+  );
+}
 
 // Fondo del menu lateral: el degradado institucional. La textura de puntos en
 // movimiento se agrega aparte con la clase CSS "sidebar-texture" (ver
@@ -137,6 +162,7 @@ export function Layout({ usuario, onLogout, children }) {
   // Se incrementa en cada clic: cambia la key del logo para reiniciar la
   // animacion de "giro total" (360 grados).
   const [giroLogo, setGiroLogo] = useState(0);
+  const [autoresOpen, setAutoresOpen] = useState(false);
 
   const toggleRestrictedMode = () => {
     setGiroLogo((n) => n + 1);
@@ -208,10 +234,33 @@ export function Layout({ usuario, onLogout, children }) {
             HOSPITAL VERAPAZ
             {restrictedMode && puedeAlternarModo && <span className="block text-[10px] font-normal opacity-75">Modo restringido</span>}
           </div>
+          <LogoUniversidad onClick={() => setAutoresOpen(true)} className="ml-auto w-8 h-8 shrink-0" />
         </div>
 
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">{children}</div>
+        {/* relative: el logo de la universidad se posiciona en la esquina
+            superior derecha del contenido y se desplaza junto con el. */}
+        <div className="relative flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
+          <LogoUniversidad
+            onClick={() => setAutoresOpen(true)}
+            className="hidden md:block absolute z-10 top-4 right-6 lg:top-5 lg:right-8 w-12 h-12 lg:w-14 lg:h-14"
+          />
+          {children}
+        </div>
       </div>
+
+      <Modal open={autoresOpen} onClose={() => setAutoresOpen(false)} title="Autores del proyecto" icon={GraduationCap}>
+        <div className="flex flex-col items-center text-center">
+          <img src={logoUmg} alt="Universidad Mariano Gálvez de Guatemala" className="w-20 h-20 mb-4" />
+          <ul className="w-full space-y-2">
+            {AUTORES.map((a) => (
+              <li key={a.carne} className="rounded-xl px-4 py-2.5" style={{ backgroundColor: COLORS.lightBg }}>
+                <div className="text-sm font-semibold" style={{ color: COLORS.text }}>{a.nombre}</div>
+                <div className="text-xs" style={{ color: COLORS.textMuted }}>{a.carne}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Modal>
     </div>
   );
 }
