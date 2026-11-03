@@ -3,7 +3,9 @@ import { COLORS } from "../styles/tokens";
 
 export function PageHeader({ title, subtitle }) {
   return (
-    <div className="mb-5">
+    // md:pr-16 / lg:pr-20: espacio reservado para el logo de la universidad
+    // que Layout coloca en la esquina superior derecha.
+    <div className="mb-5 md:pr-16 lg:pr-20">
       <div className="flex items-center gap-3">
         <span
           className="hidden sm:block w-1.5 h-7 rounded-full shrink-0"
